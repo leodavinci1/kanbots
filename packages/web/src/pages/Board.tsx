@@ -25,9 +25,45 @@ import { useBoardFilters } from '../hooks/useBoardFilters.js';
 import { useFetch } from '../hooks/useFetch.js';
 import { useIssues, dispatchIssuesRefetch } from '../hooks/useIssues.js';
 import { useSelection } from '../hooks/useSelection.js';
-import { COLUMNS, withStatus } from '../labels.js';
+import { COLUMNS, priorityFromLabels, withStatus, type Priority } from '../labels.js';
 import type { Persona } from '../personas.js';
 import type { Issue, ProviderId, StatusKey } from '../types.js';
+
+type SortMode = 'manual' | 'priority' | 'createdAt' | 'updatedAt';
+const SORT_MODES: readonly SortMode[] = ['manual', 'priority', 'createdAt', 'updatedAt'];
+const SORT_KEY = 'kanbots:board:sortMode';
+const PRIORITY_RANK: Record<Priority, number> = { p0: 0, p1: 1, p2: 2, p3: 3 };
+
+function readSortMode(): SortMode {
+  if (typeof window === 'undefined') return 'manual';
+  try {
+    const raw = window.localStorage.getItem(SORT_KEY);
+    if (raw !== null && (SORT_MODES as readonly string[]).includes(raw)) return raw as SortMode;
+  } catch {
+    // ignore
+  }
+  return 'manual';
+}
+
+function sortIssues(issues: Issue[], mode: SortMode): Issue[] {
+  if (mode === 'manual') return issues;
+  const out = [...issues];
+  if (mode === 'priority') {
+    out.sort((a, b) => {
+      const ap = priorityFromLabels(a.labels);
+      const bp = priorityFromLabels(b.labels);
+      const ar = ap === null ? 99 : PRIORITY_RANK[ap];
+      const br = bp === null ? 99 : PRIORITY_RANK[bp];
+      if (ar !== br) return ar - br;
+      // Tiebreak on createdAt desc so newer items surface within the same priority.
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+    return out;
+  }
+  const field = mode === 'createdAt' ? 'createdAt' : 'updatedAt';
+  out.sort((a, b) => new Date(b[field]).getTime() - new Date(a[field]).getTime());
+  return out;
+}
 
 const STATUS_KEYS: readonly StatusKey[] = ['backlog', 'todo', 'inProgress', 'review', 'done'];
 
@@ -91,6 +127,15 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette }: BoardProps 
     api.costUsage(),
   );
   const filterApi = useBoardFilters(issues);
+  const [sortMode, setSortMode] = useState<SortMode>(() => readSortMode());
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SORT_KEY, sortMode);
+    } catch {
+      // ignore
+    }
+  }, [sortMode]);
 
   // Poll the usage meters once a minute. The backend caches OAuth /usage for
   // 60s anyway, so polling faster just thrashes the renderer for no extra
@@ -186,6 +231,25 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette }: BoardProps 
     };
   }, [suggesting]);
 
+  // Memoised before the loading/error guards so the hook order stays
+  // stable across renders — the early returns below add zero hooks when
+  // they fire, but any new hook added _after_ them would skip on the first
+  // render and break the Rules of Hooks.
+  const grouped = useMemo(() => {
+    const base = groupByStatus(list);
+    if (sortMode === 'manual') return base;
+    return {
+      byKey: {
+        backlog: sortIssues(base.byKey.backlog, sortMode),
+        todo: sortIssues(base.byKey.todo, sortMode),
+        inProgress: sortIssues(base.byKey.inProgress, sortMode),
+        review: sortIssues(base.byKey.review, sortMode),
+        done: sortIssues(base.byKey.done, sortMode),
+      },
+      untagged: base.untagged,
+    };
+  }, [list, sortMode]);
+
   if (loading && issues.length === 0) {
     return (
       <div className="kb-app" style={{ padding: 32, color: 'var(--ink-2)' }}>
@@ -203,8 +267,6 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette }: BoardProps 
       </div>
     );
   }
-
-  const grouped = groupByStatus(list);
   const activeIssue =
     activeNumber !== null ? (issues.find((i) => i.number === activeNumber) ?? null) : null;
 
@@ -328,9 +390,14 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette }: BoardProps 
           areas: filterApi.filters.areas,
           availablePriorities: filterApi.availablePriorities,
           availableAreas: filterApi.availableAreas,
+          includeBacklog: filterApi.includeBacklog,
+          backlogCount: issues.filter((i) => i.status === 'backlog').length,
+          sortMode,
           onToggleHasAgent: filterApi.toggleHasAgent,
           onTogglePriority: (p) => filterApi.togglePriority(p as (typeof filterApi.availablePriorities)[number]),
           onToggleArea: filterApi.toggleArea,
+          onToggleIncludeBacklog: filterApi.toggleIncludeBacklog,
+          onChangeSortMode: setSortMode,
           onClear: filterApi.clear,
         }}
       />
@@ -340,7 +407,7 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette }: BoardProps 
       />
       <BoardErrorBanner message={moveError} onDismiss={() => setMoveError(null)} />
       <div className="kb-board">
-        {COLUMNS.map((col) => (
+        {COLUMNS.filter((col) => filterApi.includeBacklog || col.key !== 'backlog').map((col) => (
           <Column
             key={String(col.key)}
             columnKey={col.key}

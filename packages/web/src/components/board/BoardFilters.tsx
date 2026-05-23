@@ -5,17 +5,32 @@ export interface BoardFiltersStats {
   costToday: number;
 }
 
+export type BoardSortMode = 'manual' | 'priority' | 'createdAt' | 'updatedAt';
+
 export interface BoardFiltersControls {
   hasAgent: boolean;
   priorities: ReadonlySet<string>;
   areas: ReadonlySet<string>;
   availablePriorities: readonly string[];
   availableAreas: readonly string[];
+  includeBacklog: boolean;
+  /** Number of issues in the (hidden) backlog — null hides the toggle when 0. */
+  backlogCount: number;
+  sortMode: BoardSortMode;
   onToggleHasAgent: () => void;
   onTogglePriority: (p: string) => void;
   onToggleArea: (a: string) => void;
+  onToggleIncludeBacklog: () => void;
+  onChangeSortMode: (mode: BoardSortMode) => void;
   onClear: () => void;
 }
+
+const SORT_LABEL: Record<BoardSortMode, string> = {
+  manual: 'Manual',
+  priority: 'Priority',
+  createdAt: 'Newest',
+  updatedAt: 'Recently active',
+};
 
 export interface BoardFiltersProps {
   stats: BoardFiltersStats;
@@ -40,6 +55,24 @@ export function BoardFilters({ stats, controls }: BoardFiltersProps) {
       </span>
       {controls !== null ? (
         <>
+          {controls.backlogCount > 0 || controls.includeBacklog ? (
+            <button
+              type="button"
+              className={`kb-pill${controls.includeBacklog ? ' on' : ''}`}
+              onClick={controls.onToggleIncludeBacklog}
+              aria-pressed={controls.includeBacklog}
+              title={
+                controls.includeBacklog
+                  ? 'Click to hide the Backlog column'
+                  : `Click to show the Backlog column (${controls.backlogCount} hidden)`
+              }
+            >
+              {controls.includeBacklog ? <span className="kb-pill-x" /> : null}
+              {controls.includeBacklog
+                ? 'Backlog'
+                : `Backlog (${controls.backlogCount})`}
+            </button>
+          ) : null}
           <button
             type="button"
             className={`kb-pill${controls.hasAgent ? ' on kb-pill-running' : ''}`}
@@ -91,6 +124,28 @@ export function BoardFilters({ stats, controls }: BoardFiltersProps) {
             </button>
           ) : null}
         </>
+      ) : null}
+      {controls !== null ? (
+        <label
+          className="kb-board-sort"
+          title={
+            controls.sortMode === 'manual'
+              ? 'Manual sort lets you drag cards within a column (drag-reorder ships in a later milestone)'
+              : `Sorting by ${SORT_LABEL[controls.sortMode].toLowerCase()} — switch to Manual for drag-reorder`
+          }
+        >
+          <span className="kb-board-sort-label">Sort</span>
+          <select
+            className="kb-board-sort-select"
+            value={controls.sortMode}
+            onChange={(e) => controls.onChangeSortMode(e.target.value as BoardSortMode)}
+          >
+            <option value="manual">{SORT_LABEL.manual}</option>
+            <option value="priority">{SORT_LABEL.priority}</option>
+            <option value="createdAt">{SORT_LABEL.createdAt}</option>
+            <option value="updatedAt">{SORT_LABEL.updatedAt}</option>
+          </select>
+        </label>
       ) : null}
       <span className="kb-stats-line">
         {stats.issues} issue{stats.issues === 1 ? '' : 's'} · {stats.runs} active run

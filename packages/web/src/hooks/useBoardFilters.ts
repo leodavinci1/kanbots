@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { areaLabels, priorityFromLabels, type Priority } from '../labels.js';
 import type { Issue } from '../types.js';
 
@@ -14,9 +14,26 @@ const EMPTY_FILTERS: BoardFilters = {
   areas: new Set(),
 };
 
+const INCLUDE_BACKLOG_KEY = 'kanbots:board:includeBacklog';
+
+function readIncludeBacklog(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(INCLUDE_BACKLOG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export interface BoardFilterAPI {
   filters: BoardFilters;
   filtered: Issue[];
+  /**
+   * Backlog is hidden by default to keep the board focused on active work.
+   * Toggle to show it; preference is persisted to localStorage.
+   */
+  includeBacklog: boolean;
+  toggleIncludeBacklog: () => void;
   toggleHasAgent: () => void;
   togglePriority: (p: Priority) => void;
   toggleArea: (a: string) => void;
@@ -29,6 +46,16 @@ const PRIORITY_ORDER: Priority[] = ['p0', 'p1', 'p2', 'p3'];
 
 export function useBoardFilters(issues: Issue[]): BoardFilterAPI {
   const [filters, setFilters] = useState<BoardFilters>(EMPTY_FILTERS);
+  const [includeBacklog, setIncludeBacklog] = useState<boolean>(() => readIncludeBacklog());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(INCLUDE_BACKLOG_KEY, includeBacklog ? '1' : '0');
+    } catch {
+      // ignore — private mode / quota.
+    }
+  }, [includeBacklog]);
 
   const availablePriorities = useMemo<Priority[]>(() => {
     const seen = new Set<Priority>();
@@ -51,6 +78,7 @@ export function useBoardFilters(issues: Issue[]): BoardFilterAPI {
 
   const filtered = useMemo<Issue[]>(() => {
     return issues.filter((i) => {
+      if (!includeBacklog && i.status === 'backlog') return false;
       if (filters.hasAgent && (i.agent === null || i.agent === 'idle')) return false;
       if (filters.priorities.size > 0) {
         const p = priorityFromLabels(i.labels);
@@ -63,7 +91,7 @@ export function useBoardFilters(issues: Issue[]): BoardFilterAPI {
       }
       return true;
     });
-  }, [issues, filters]);
+  }, [issues, filters, includeBacklog]);
 
   function toggleHasAgent(): void {
     setFilters((f) => ({ ...f, hasAgent: !f.hasAgent }));
@@ -87,10 +115,15 @@ export function useBoardFilters(issues: Issue[]): BoardFilterAPI {
   function clear(): void {
     setFilters(EMPTY_FILTERS);
   }
+  function toggleIncludeBacklog(): void {
+    setIncludeBacklog((v) => !v);
+  }
 
   return {
     filters,
     filtered,
+    includeBacklog,
+    toggleIncludeBacklog,
     toggleHasAgent,
     togglePriority,
     toggleArea,
