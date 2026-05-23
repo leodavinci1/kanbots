@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'reac
 import type { AgentRunSummary } from '@kanbots/cloud-client';
 import { api, getCloudCtx } from '../../api.js';
 import { getBridge } from '../../desktop-bridge.js';
-import { InlineDiff } from '../run/InlineDiff.js';
+import { InlineDiff, type InlineDiffMode } from '../run/InlineDiff.js';
+import { useDiffPrefs } from '../../hooks/useDiffPrefs.js';
 
 const TERMINAL_RUN_STATUSES = new Set(['succeeded', 'failed', 'stopped', 'timed_out']);
 
@@ -464,6 +465,14 @@ interface WorktreeDiffCardProps {
   worktreePath: string;
   filePath: string;
   defaultOpen: boolean;
+  diffMode: InlineDiffMode;
+  ignoreWhitespace: boolean;
+  // Tick counters from the parent: when these increment, the card forces its
+  // local `open` to the corresponding state. Lets a single button in the
+  // modal head expand or collapse every card without removing the
+  // per-card chevron's ability to toggle individually afterwards.
+  expandTick: number;
+  collapseTick: number;
   onMessageSent?: () => void;
   onSelectIssue?: (issueNumber: number) => void;
 }
@@ -472,6 +481,10 @@ function WorktreeDiffCard({
   worktreePath,
   filePath,
   defaultOpen,
+  diffMode,
+  ignoreWhitespace,
+  expandTick,
+  collapseTick,
   onMessageSent,
   onSelectIssue,
 }: WorktreeDiffCardProps) {
@@ -482,11 +495,25 @@ function WorktreeDiffCard({
   });
   const ctx = parseWorktreeContext(worktreePath);
   const cloudCtx = getCloudCtx();
+  // Inline-comment UI is local-only: cloud KSUID suffixes are alphanumeric
+  // and don't address rows in the local `agent_runs` table. Coerce to a
+  // finite integer; pass to InlineDiff only when both succeed.
+  const localRunId = useMemo<number | null>(() => {
+    if (ctx === null || cloudCtx !== null) return null;
+    const n = Number.parseInt(ctx.runId, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [ctx, cloudCtx]);
   const [reply, setReply] = useState('');
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [posted, setPosted] = useState(false);
   const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (expandTick > 0) setOpen(true);
+  }, [expandTick]);
+  useEffect(() => {
+    if (collapseTick > 0) setOpen(false);
+  }, [collapseTick]);
   const [meta, setMeta] = useState<RunMetaState>({
     loading: ctx !== null && cloudCtx !== null,
     run: null,
@@ -691,6 +718,11 @@ function WorktreeDiffCard({
               <InlineDiff
                 oldString={state.data.oldText ?? ''}
                 newString={state.data.newText ?? ''}
+                mode={diffMode}
+                ignoreWhitespace={ignoreWhitespace}
+                {...(localRunId !== null
+                  ? { runId: localRunId, filePath }
+                  : {})}
               />
             )}
           </div>
@@ -779,6 +811,9 @@ export function FileChangeViewer({
 }: FileChangeViewerProps) {
   const hasChanges = worktrees.length > 0;
   const [tab, setTab] = useState<Tab>(hasChanges ? 'changes' : 'current');
+  const { prefs: diffPrefs, set: setDiffPref } = useDiffPrefs();
+  const [expandTick, setExpandTick] = useState(0);
+  const [collapseTick, setCollapseTick] = useState(0);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -809,6 +844,63 @@ export function FileChangeViewer({
             <span className="kb-fcv-readonly" aria-label="read-only">read-only</span>
           </h2>
           <span className="grow" />
+          {hasChanges ? (
+            <>
+              <div className="kb-diff-mode" role="group" aria-label="Diff view mode">
+                <button
+                  type="button"
+                  className={`kb-diff-mode-btn${diffPrefs.mode === 'unified' ? ' is-active' : ''}`}
+                  aria-pressed={diffPrefs.mode === 'unified'}
+                  title="Unified diff (single column)"
+                  onClick={() => setDiffPref('mode', 'unified')}
+                >
+                  Unified
+                </button>
+                <button
+                  type="button"
+                  className={`kb-diff-mode-btn${diffPrefs.mode === 'split' ? ' is-active' : ''}`}
+                  aria-pressed={diffPrefs.mode === 'split'}
+                  title="Side-by-side diff (two columns)"
+                  onClick={() => setDiffPref('mode', 'split')}
+                >
+                  Split
+                </button>
+              </div>
+              <button
+                type="button"
+                className={`kb-diff-toggle${diffPrefs.ignoreWhitespace ? ' is-active' : ''}`}
+                aria-pressed={diffPrefs.ignoreWhitespace}
+                title={
+                  diffPrefs.ignoreWhitespace
+                    ? 'Showing diff with whitespace changes hidden — click to include them'
+                    : 'Click to hide whitespace-only changes'
+                }
+                onClick={() => setDiffPref('ignoreWhitespace', !diffPrefs.ignoreWhitespace)}
+              >
+                Ignore ws
+              </button>
+              {worktrees.length > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    className="kb-diff-action"
+                    title="Expand all diffs"
+                    onClick={() => setExpandTick((t) => t + 1)}
+                  >
+                    Expand all
+                  </button>
+                  <button
+                    type="button"
+                    className="kb-diff-action"
+                    title="Collapse all diffs"
+                    onClick={() => setCollapseTick((t) => t + 1)}
+                  >
+                    Collapse all
+                  </button>
+                </>
+              ) : null}
+            </>
+          ) : null}
           <button type="button" className="x-btn" onClick={onClose} aria-label="Close" title="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 6l12 12M18 6l-12 12" />
@@ -865,6 +957,10 @@ export function FileChangeViewer({
                 worktreePath={wt}
                 filePath={filePath}
                 defaultOpen={idx === 0}
+                diffMode={diffPrefs.mode}
+                ignoreWhitespace={diffPrefs.ignoreWhitespace}
+                expandTick={expandTick}
+                collapseTick={collapseTick}
                 {...(onSelectIssue !== undefined
                   ? {
                       onSelectIssue: (n: number) => {
