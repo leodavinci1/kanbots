@@ -33,14 +33,34 @@ KanBots binaries are not yet code-signed (Apple Developer ID and
 Windows EV certs are paid; we'll add them when revenue covers it).
 First-launch friction is small but real:
 
-**macOS** — Gatekeeper will say _"kanbots cannot be opened because
-Apple cannot check it for malicious software."_ Either right-click the
-app and choose **Open** (then click **Open** again in the prompt), or
-clear the quarantine flag from a terminal:
+**macOS — one-line installer (recommended).** The easiest path is to
+let our installer download the .dmg, copy `kanbots.app` to
+`/Applications`, and strip the Gatekeeper quarantine flag for you:
 
 ```sh
-xattr -d com.apple.quarantine "/Applications/kanbots.app"
+curl -fsSL https://kanbots.dev/install-mac.sh | bash
 ```
+
+This avoids the Gatekeeper errors below. Inspect the script first if
+you're cautious about `curl | bash` — it's plain bash, hosted by the
+kanbots.dev marketing site, and only downloads our GitHub Releases
+artifact and clears `com.apple.quarantine`.
+
+**macOS — manual install.** If you'd rather drag the .dmg yourself,
+Gatekeeper will block first launch with one of two messages depending
+on your macOS version:
+
+- macOS 14 and earlier: _"kanbots cannot be opened because Apple cannot
+  check it for malicious software."_ Right-click the app, choose
+  **Open**, then click **Open** again in the prompt.
+- macOS 15+ (incl. macOS 26 / Tahoe): _"kanbots is damaged and can't be
+  opened. You should move it to the Trash."_ The right-click trick no
+  longer works on this wording — you have to clear the quarantine flag
+  from a terminal:
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/kanbots.app"
+  ```
 
 **Windows** — Microsoft Defender SmartScreen pops up: _"Windows
 protected your PC."_ Click **More info → Run anyway**.

@@ -46,9 +46,6 @@ the issue into subtasks as they go.*
 multi-user boards, and managed agent infrastructure — same UI, paid
 tier. The OSS desktop stays free forever.
 
-Read more about the two-product split:
-[docs/why-two-products.md](docs/why-two-products.md).
-
 ## Highlights
 
 - **Kanban with five columns** (Backlog → Done) plus an Inbox for
@@ -82,10 +79,17 @@ Read more about the two-product split:
 Packaged builds for **Linux**, **macOS** (Apple Silicon + Intel), and
 **Windows** (x64) are published to the
 [GitHub releases page](https://github.com/leodavinci1/kanbots/releases).
-macOS and Windows builds are currently unsigned — see
-[docs/getting-started.md](docs/getting-started.md#unsigned-builds) for
-the right-click-Open / SmartScreen-bypass walkthrough. Releasing
-infrastructure lives in [docs/releasing.md](docs/releasing.md).
+macOS and Windows builds are currently unsigned. On macOS the easiest
+way to install is the one-line script (downloads the .dmg and clears
+the Gatekeeper quarantine flag automatically):
+
+```sh
+curl -fsSL https://kanbots.dev/install-mac.sh | bash
+```
+
+For manual install / Windows SmartScreen bypass, see
+[docs/getting-started.md](docs/getting-started.md#unsigned-builds).
+Releasing infrastructure lives in [docs/releasing.md](docs/releasing.md).
 
 ## Install & run
 

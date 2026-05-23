@@ -72,16 +72,33 @@ covers it). The runtime impact:
 
 ### macOS
 
-> "kanbots" cannot be opened because Apple cannot check it for malicious
-> software.
+The exact Gatekeeper message depends on the macOS version:
 
-The user has two ways to bypass:
+- macOS 14 and earlier: _"kanbots cannot be opened because Apple cannot
+  check it for malicious software."_ Bypassed by right-click → **Open**.
+- macOS 15+ (incl. macOS 26 / Tahoe): _"kanbots is damaged and can't
+  be opened. You should move it to the Trash."_ Right-click → **Open**
+  no longer works on this wording; the only manual workaround is the
+  `xattr` command below.
 
-1. Right-click the app, choose **Open**, then click **Open** again in the
-   prompt.
+We ship a one-line installer to take the manual step off users'
+plates — it downloads the latest .dmg and clears the quarantine flag
+automatically:
+
+```sh
+curl -fsSL https://kanbots.dev/install-mac.sh | bash
+```
+
+Source: [`marketing/public/install-mac.sh`](https://kanbots.dev/install-mac.sh)
+(canonical copy lives in the `kanbots-marketing` repo, served by Vercel).
+
+Users who prefer a manual install:
+
+1. Right-click the app, choose **Open**, then click **Open** again
+   (only works on macOS 14 and earlier).
 2. From a terminal:
    ```sh
-   xattr -d com.apple.quarantine "/Applications/kanbots.app"
+   xattr -dr com.apple.quarantine "/Applications/kanbots.app"
    ```
 
 ### Windows
