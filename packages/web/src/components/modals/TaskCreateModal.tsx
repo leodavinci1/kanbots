@@ -123,11 +123,11 @@ export function TaskCreateModal({
   const [tag, setTag] = useState<Tag>('feat');
   const [priority, setPriority] = useState<Priority>('p2');
   const [checks, setChecks] = useState({
-    tsc: true,
-    tests: true,
+    tsc: false,
+    tests: false,
     lint: false,
     e2e: false,
-    preview: true,
+    preview: false,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
