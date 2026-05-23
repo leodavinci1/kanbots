@@ -592,6 +592,30 @@ h2 {
   font-size: 13px;
   color: var(--ink-3);
 }
+.picker-cloud-footer {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.picker-cloud-link {
+  background: transparent;
+  border: none;
+  color: var(--ink-2);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+.picker-cloud-link:hover:not(:disabled) {
+  color: var(--ink-1);
+}
+.picker-cloud-link:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 
 .issue-composer {
   background: white;
