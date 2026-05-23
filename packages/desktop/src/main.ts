@@ -1662,6 +1662,40 @@ function registerIpc(): void {
   );
 }
 
+/**
+ * In dev mode, mirror the renderer's console output to the main process
+ * stdout/stderr so `pnpm desktop:dev` shows React errors (including the
+ * ErrorBoundary's `console.error(...)`) without the user having to open
+ * DevTools. Off in packaged builds — the renderer's console is private
+ * to DevTools there.
+ *
+ * Levels: Electron uses 0=verbose, 1=info, 2=warning, 3=error.
+ */
+function forwardRendererConsole(win: BrowserWindow, tag: 'main' | 'chat'): void {
+  const isDev = Boolean(process.env.KANBOTS_RENDERER_URL) || process.env.NODE_ENV === 'development';
+  if (!isDev) return;
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const prefix = `[renderer:${tag}]`;
+    const where = sourceId ? ` (${sourceId.split('/').pop()}:${line})` : '';
+    const text = `${prefix} ${message}${where}`;
+    if (level === 3) process.stderr.write(text + '\n');
+    else process.stdout.write(text + '\n');
+  });
+  // Renderer crashes (whole process exits) and unresponsive states are not
+  // covered by `console-message` — surface them too so dev knows when the
+  // renderer falls over silently.
+  win.webContents.on('render-process-gone', (_event, details) => {
+    process.stderr.write(
+      `[renderer:${tag}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}\n`,
+    );
+  });
+  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+    process.stderr.write(
+      `[renderer:${tag}] preload-error path=${preloadPath} message=${error.message}\n`,
+    );
+  });
+}
+
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1200,
@@ -1681,6 +1715,8 @@ async function createWindow(): Promise<void> {
   win.on('closed', () => {
     mainWindow = null;
   });
+
+  forwardRendererConsole(win, 'main');
 
   if (process.env.KANBOTS_OPEN_DEVTOOLS) {
     win.webContents.openDevTools({ mode: 'detach' });
@@ -1722,6 +1758,8 @@ async function createChatWindow(conversationId: number | null): Promise<BrowserW
       activeWorkspace.subscriptions.closeAllForOwner(win.webContents.id);
     }
   });
+
+  forwardRendererConsole(win, 'chat');
 
   if (process.env.KANBOTS_OPEN_DEVTOOLS) {
     win.webContents.openDevTools({ mode: 'detach' });
