@@ -12,6 +12,8 @@ export { codexCliAdapter } from './adapters/codex-cli.js';
 
 export { chat, getAdapter, listAdapters, validateProvider } from './manager.js';
 
+export { discoverSlashCommands } from './slashCommands.js';
+
 export type {
   AgentRunHandle,
   ChatMessage,
@@ -26,3 +28,9 @@ export type {
   StreamEvent,
   ValidateResult,
 } from './types.js';
+
+export type {
+  AgentKey,
+  SlashCommand,
+  SlashCommandSource,
+} from './slashCommands.js';

@@ -1,6 +1,7 @@
 import { Logo } from '../Logo.js';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -41,7 +42,10 @@ import type {
   DiffPayload,
   IssueDetail as IssueDetailPayload,
   Message,
+  ProviderId,
+  ReviewCommentPayload,
   SentrySuggestion,
+  SlashCommandPayload,
   StatusKey,
 } from '../../types.js';
 
@@ -354,7 +358,11 @@ export function TaskDetailModal({ issueNumber, onClose }: TaskDetailModalProps) 
 
         <div className="kb-modal-foot">
           <span className="hint">Reply to agent</span>
-          <ReplyFooter issueNumber={issueNumber} onSent={() => void refetch()} />
+          <ReplyFooter
+            issueNumber={issueNumber}
+            activeRun={activeRun}
+            onSent={() => void refetch()}
+          />
         </div>
       </div>
     </div>
@@ -363,14 +371,130 @@ export function TaskDetailModal({ issueNumber, onClose }: TaskDetailModalProps) 
 
 function ReplyFooter({
   issueNumber,
+  activeRun,
   onSent,
 }: {
   issueNumber: number;
+  activeRun: AgentRun | null;
   onSent: () => void;
 }) {
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingComments, setPendingComments] = useState<ReviewCommentPayload[]>([]);
+  const [allCommands, setAllCommands] = useState<SlashCommandPayload[]>([]);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Pick the provider to query for slash commands. activeRun.provider can be
+  // arbitrary strings from older runs, so narrow defensively.
+  const provider: ProviderId = useMemo(() => {
+    const p = activeRun?.provider;
+    if (p === 'claude-code' || p === 'codex-cli') return p;
+    return 'claude-code';
+  }, [activeRun?.provider]);
+
+  // Discover slash commands for the active provider. Cache-warmed by the
+  // backend; cheap to re-fetch on provider switch.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSlashCommands(provider)
+      .then((cmds) => {
+        if (!cancelled) setAllCommands(cmds);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  // Track pending inline review comments on the active run. Comments are
+  // added from the diff viewer (a different surface), so poll periodically
+  // while the modal is open.
+  const activeRunId = activeRun?.id ?? null;
+  useEffect(() => {
+    if (activeRunId === null) {
+      setPendingComments([]);
+      return;
+    }
+    let cancelled = false;
+    function refresh(): void {
+      api
+        .getReviewComments(activeRunId as number)
+        .then((cs) => {
+          if (!cancelled) setPendingComments(cs);
+        })
+        .catch(() => undefined);
+    }
+    refresh();
+    const id = window.setInterval(refresh, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [activeRunId]);
+
+  // Open the slash-command menu when the input starts with `/` and the
+  // first whitespace hasn't appeared yet (i.e. the user is still typing
+  // the command name).
+  const slashQuery = useMemo<string | null>(() => {
+    const m = /^\/(\S*)$/.exec(body);
+    return m ? m[1] ?? '' : null;
+  }, [body]);
+  const slashOpen = slashQuery !== null;
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashQuery]);
+
+  const filteredCommands = useMemo<SlashCommandPayload[]>(() => {
+    if (slashQuery === null) return [];
+    const q = slashQuery.toLowerCase();
+    if (q.length === 0) return allCommands;
+    return allCommands.filter((c) => c.name.toLowerCase().includes(q));
+  }, [slashQuery, allCommands]);
+
+  function applySlash(cmd: SlashCommandPayload): void {
+    setBody(`/${cmd.name} `);
+    inputRef.current?.focus();
+  }
+
+  function onKey(e: KeyboardEvent<HTMLInputElement>): void {
+    if (slashOpen && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        const cmd = filteredCommands[slashIndex];
+        if (cmd) applySlash(cmd);
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const cmd = filteredCommands[slashIndex];
+        if (cmd) applySlash(cmd);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setBody('');
+        return;
+      }
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      void send();
+    }
+  }
 
   async function send(): Promise<void> {
     const trimmed = body.trim();
@@ -378,7 +502,20 @@ function ReplyFooter({
     setSending(true);
     setError(null);
     try {
-      await api.postMessage(issueNumber, trimmed);
+      let messageBody = trimmed;
+      // Consume any pending inline review comments and prepend them as a
+      // structured block so the agent sees them as context.
+      if (activeRunId !== null && pendingComments.length > 0) {
+        const consumed = await api.consumeReviewComments(activeRunId);
+        if (consumed.length > 0) {
+          const block = consumed
+            .map((c) => `- \`${c.filePath}:${c.lineNumber}\` (${c.side}) — ${c.body}`)
+            .join('\n');
+          messageBody = `Inline review comments:\n${block}\n\n${trimmed}`;
+        }
+        setPendingComments([]);
+      }
+      await api.postMessage(issueNumber, messageBody);
       setBody('');
       onSent();
     } catch (err) {
@@ -388,23 +525,50 @@ function ReplyFooter({
     }
   }
 
-  function onKey(e: KeyboardEvent<HTMLInputElement>): void {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      void send();
-    }
-  }
-
   return (
     <>
-      <input
-        type="text"
-        placeholder="/spec to refine · /review to spawn reviewer · /split to fan out…"
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={onKey}
-        disabled={sending}
-      />
+      <div className="kb-reply-input-wrap">
+        {slashOpen && filteredCommands.length > 0 ? (
+          <div className="kb-slash-menu" role="listbox" aria-label="Slash commands">
+            {filteredCommands.slice(0, 8).map((cmd, i) => (
+              <button
+                key={`${cmd.source}:${cmd.name}`}
+                type="button"
+                role="option"
+                aria-selected={i === slashIndex}
+                className={`kb-slash-item${i === slashIndex ? ' is-active' : ''}`}
+                onMouseEnter={() => setSlashIndex(i)}
+                onMouseDown={(e) => {
+                  // Prevent input blur before click fires.
+                  e.preventDefault();
+                }}
+                onClick={() => applySlash(cmd)}
+              >
+                <span className="kb-slash-name">/{cmd.name}</span>
+                <span className="kb-slash-desc">{cmd.description}</span>
+                <span className={`kb-slash-src kb-slash-src-${cmd.source}`}>{cmd.source}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="/spec to refine · /review to spawn reviewer · /split to fan out…"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={onKey}
+          disabled={sending}
+        />
+      </div>
+      {pendingComments.length > 0 ? (
+        <span
+          className="kb-reply-badge"
+          title={`${pendingComments.length} inline review comment${pendingComments.length === 1 ? '' : 's'} will be sent with your next message`}
+        >
+          {pendingComments.length} comment{pendingComments.length === 1 ? '' : 's'}
+        </span>
+      ) : null}
       <button
         type="button"
         className="kb-btn primary"

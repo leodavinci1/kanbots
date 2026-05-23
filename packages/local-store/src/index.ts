@@ -15,6 +15,7 @@ import { LocalIssuesRepo } from './repos/local-issues.js';
 import { MessagesRepo } from './repos/messages.js';
 import { PromotionsRepo } from './repos/promotions.js';
 import { ProviderSettingsRepo, ProvidersRepo } from './repos/providers.js';
+import { ReviewCommentsRepo } from './repos/review-comments.js';
 import { SentryConfigRepo } from './repos/sentry-config.js';
 import { SentryImportsRepo } from './repos/sentry-imports.js';
 import { ThreadsRepo } from './repos/threads.js';
@@ -38,6 +39,7 @@ export interface Store {
   readonly autopilotSessions: AutopilotSessionsRepo;
   readonly providers: ProvidersRepo;
   readonly providerSettings: ProviderSettingsRepo;
+  readonly reviewComments: ReviewCommentsRepo;
   readonly sentryConfig: SentryConfigRepo;
   readonly sentryImports: SentryImportsRepo;
   readonly db: Db;
@@ -77,6 +79,7 @@ function wrap(db: Db): Store {
     autopilotSessions: new AutopilotSessionsRepo(db),
     providers: new ProvidersRepo(db),
     providerSettings: new ProviderSettingsRepo(db),
+    reviewComments: new ReviewCommentsRepo(db),
     sentryConfig: new SentryConfigRepo(db),
     sentryImports: new SentryImportsRepo(db),
     db,
@@ -130,6 +133,13 @@ export { LocalIssueSource, type LocalIssueSourceOptions } from './local-issue-so
 
 export type { ProviderConfigPatch, ProviderSettingsPatch } from './repos/providers.js';
 export { PROVIDER_IDS } from './repos/providers.js';
+export type {
+  AddReviewCommentInput,
+  ListReviewCommentsForFileInput,
+  ListReviewCommentsInput,
+  ReviewComment,
+  ReviewCommentSide,
+} from './repos/review-comments.js';
 export type { SentryConfigPatch } from './repos/sentry-config.js';
 export type { UpsertSentryImportInput } from './repos/sentry-imports.js';
 
@@ -144,6 +154,7 @@ export {
   HOUSE_RULES_MAX_BYTES,
   readWorkspaceConfig,
   resolveGitUserName,
+  WORKSPACE_SCRIPT_MAX_BYTES,
   writeWorkspaceConfig,
   type CheckCommandKind,
   type CheckCommandOverride,
@@ -154,6 +165,8 @@ export {
   type WorkspaceConfig,
   type WorkspaceDefaults,
   type WorkspaceMode,
+  type WorkspaceScriptKind,
+  type WorkspaceScripts,
 } from './workspace.js';
 
 export type {
