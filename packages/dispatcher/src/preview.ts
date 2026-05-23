@@ -14,11 +14,20 @@ export interface PreviewHandle {
 export interface PreviewSpawnOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
+  /** Internal: passed to node:child_process.spawn for shell-mode commands. */
+  shell?: boolean;
 }
 
 export interface StartPreviewOptions {
   cwd: string;
   startCommand?: string[];
+  /**
+   * Raw shell command string (e.g. `pnpm dev --host`). When set, takes
+   * precedence over `startCommand` and is executed via `{ shell: true }`
+   * so pipes / env-vars / multi-token args work the way users expect.
+   * Used by the per-repo dev-server-script config from Settings.
+   */
+  startCommandLine?: string;
   preferredPort?: number;
   detectMs?: number;
   spawn?: (command: string, args: readonly string[], options: PreviewSpawnOptions) => ChildProcess;
@@ -63,8 +72,12 @@ export async function startPreview(opts: StartPreviewOptions): Promise<PreviewHa
     PORT: String(port),
     NODE_ENV: 'development',
   };
-  const cmd = opts.startCommand ?? ['pnpm', 'dev'];
-  const child = spawn(cmd[0]!, cmd.slice(1), { cwd: opts.cwd, env });
+  const child = opts.startCommandLine
+    ? spawn(opts.startCommandLine, [], { cwd: opts.cwd, env, shell: true } as PreviewSpawnOptions)
+    : (() => {
+        const cmd = opts.startCommand ?? ['pnpm', 'dev'];
+        return spawn(cmd[0]!, cmd.slice(1), { cwd: opts.cwd, env });
+      })();
   const pid = child.pid ?? -1;
   let state: PreviewState = 'booting';
 

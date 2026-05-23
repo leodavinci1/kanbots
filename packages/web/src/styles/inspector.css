@@ -661,6 +661,53 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Editable URL bar + page actions. The form is the flex:1 child so it
+   absorbs leftover toolbar space; action buttons sit flush to the right
+   of the input as a compact action group. */
+.kb-preview-frame .pf-url-form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.kb-preview-frame .pf-url-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--hairline-soft);
+  color: var(--ink-1);
+  font-family: var(--ff-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  outline: none;
+}
+.kb-preview-frame .pf-url-input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.kb-preview-frame .pf-url-action {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.kb-preview-frame .pf-url-action:hover {
+  color: var(--ink);
+  background: var(--bg-3);
+}
 .kb-preview-frame .pf-canvas {
   height: 360px;
   background:
@@ -676,4 +723,106 @@
 .kb-preview-frame .pf-canvas .lbl {
   font-family: var(--ff-mono);
   font-size: 11px;
+}
+
+/* Device-mode toggle inside the preview toolbar. Compact segmented control
+   that re-uses the same colour vocabulary as the modal-head .kb-diff-mode
+   but lives on the .pf-bar surface (slightly lighter background). */
+/* Pause/resume button sits next to the .pf-dots traffic-light glyphs.
+   Glyph-only — same colour weight as the surrounding toolbar text. */
+.kb-preview-frame .pf-play {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--hairline-soft);
+  color: var(--ink-1);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.kb-preview-frame .pf-play:hover:not(:disabled) {
+  border-color: var(--hairline);
+  background: var(--bg-1);
+  color: var(--ink);
+}
+.kb-preview-frame .pf-play:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kb-preview-frame .pf-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-family: var(--ff-sans);
+}
+.kb-preview-frame .pf-device-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--ink-2);
+  font: 500 10.5px var(--ff-sans);
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.kb-preview-frame .pf-device-btn:hover { color: var(--ink-1); }
+.kb-preview-frame .pf-device-btn.is-active {
+  background: var(--bg-3);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+/* Mobile shell: centre a 390×844 iframe with a thin device-frame ring.
+   The canvas itself scrolls when the device exceeds its height. */
+.kb-preview-frame .pf-canvas-mobile {
+  overflow: auto;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 16px 0;
+}
+.kb-preview-frame .pf-mobile-shell {
+  width: 390px;
+  height: 844px;
+  border-radius: 28px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 2px var(--hairline),
+    0 0 0 8px var(--bg-1),
+    0 24px 48px oklch(0 0 0 / 0.5);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Responsive shell: native CSS resize gives a drag-corner without
+   bringing in any library. min-w small enough to feel tablet-ish, max-w
+   bounded by the canvas. */
+.kb-preview-frame .pf-canvas-responsive {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 8px;
+}
+.kb-preview-frame .pf-responsive-shell {
+  width: 768px;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 240px;
+  min-height: 200px;
+  resize: both;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: white;
 }

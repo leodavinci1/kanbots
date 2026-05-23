@@ -140,6 +140,37 @@ export function Palette({
           onResolveTopDecision?.();
         },
       },
+      {
+        id: 'open-repo-scripts',
+        label: 'Open Repo scripts settings',
+        category: 'quick',
+        onPick: () => {
+          onClose();
+          window.dispatchEvent(new CustomEvent('kanbots:open-repo-scripts'));
+        },
+      },
+      {
+        id: 'run-setup-script',
+        label: 'Run setup script',
+        category: 'quick',
+        onPick: () => {
+          onClose();
+          window.dispatchEvent(
+            new CustomEvent('kanbots:open-repo-scripts', { detail: { autoRun: 'setup' } }),
+          );
+        },
+      },
+      {
+        id: 'run-cleanup-script',
+        label: 'Run cleanup script',
+        category: 'quick',
+        onPick: () => {
+          onClose();
+          window.dispatchEvent(
+            new CustomEvent('kanbots:open-repo-scripts', { detail: { autoRun: 'cleanup' } }),
+          );
+        },
+      },
     ],
     [
       selectedNumber,

@@ -31,8 +31,24 @@ export interface CheckCommandOverride {
 
 export type CheckCommandOverrides = Partial<Record<CheckCommandKind, CheckCommandOverride>>;
 
+/**
+ * Per-repo shell scripts the user configures from Settings. Stored as raw
+ * shell strings (e.g. `pnpm dev`, `bash scripts/setup.sh`) so users can
+ * write multi-token commands without splitting them by hand. Executed via
+ * Node's `{ shell: true }` so pipes / env-vars work the way users expect.
+ *
+ * - `devServer` — invoked by the in-app preview panel instead of the
+ *   default `pnpm dev` when set.
+ * - `setup` / `cleanup` — one-shot scripts the user can run from the
+ *   command palette before / after working in a repo.
+ */
+export type WorkspaceScriptKind = 'devServer' | 'setup' | 'cleanup';
+export type WorkspaceScripts = Partial<Record<WorkspaceScriptKind, string>>;
+export const WORKSPACE_SCRIPT_MAX_BYTES = 4 * 1024;
+
 interface WorkspaceConfigCommon {
   checks?: CheckCommandOverrides;
+  scripts?: WorkspaceScripts;
   /**
    * Workspace-wide rules prepended to every agent prompt (issue runs, chat
    * runs, autopilot child runs). Stored verbatim; trimmed on read. Capped at
@@ -42,6 +58,7 @@ interface WorkspaceConfigCommon {
 }
 
 export const HOUSE_RULES_MAX_BYTES = 8 * 1024;
+const SCRIPT_KINDS: readonly WorkspaceScriptKind[] = ['devServer', 'setup', 'cleanup'];
 
 export interface GitHubWorkspaceConfig extends WorkspaceConfigCommon {
   mode: 'github';
@@ -62,6 +79,37 @@ export interface LocalWorkspaceConfig extends WorkspaceConfigCommon {
 export type WorkspaceConfig = GitHubWorkspaceConfig | LocalWorkspaceConfig;
 
 const CHECK_KINDS: readonly CheckCommandKind[] = ['typecheck', 'tests', 'lint', 'e2e'];
+
+function validateScripts(input: unknown): WorkspaceScripts | undefined {
+  if (input === undefined) return undefined;
+  if (typeof input !== 'object' || input === null) {
+    console.warn('[kanbots] ignoring invalid `scripts` field in .kanbots/config.json (expected object)');
+    return undefined;
+  }
+  const obj = input as Record<string, unknown>;
+  const out: WorkspaceScripts = {};
+  for (const key of Object.keys(obj)) {
+    if (!SCRIPT_KINDS.includes(key as WorkspaceScriptKind)) {
+      console.warn(`[kanbots] ignoring unknown script kind "${key}" in .kanbots/config.json`);
+      continue;
+    }
+    const v = obj[key];
+    if (typeof v !== 'string') {
+      console.warn(`[kanbots] ignoring invalid script "${key}" (expected string)`);
+      continue;
+    }
+    const trimmed = v.trim();
+    if (trimmed.length === 0) continue;
+    if (Buffer.byteLength(trimmed, 'utf8') > WORKSPACE_SCRIPT_MAX_BYTES) {
+      console.warn(
+        `[kanbots] ignoring script "${key}" exceeding ${WORKSPACE_SCRIPT_MAX_BYTES} bytes`,
+      );
+      continue;
+    }
+    out[key as WorkspaceScriptKind] = trimmed;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 function validateCheckOverrides(input: unknown): CheckCommandOverrides | undefined {
   if (input === undefined) return undefined;
@@ -136,12 +184,14 @@ function validateConfig(input: unknown): WorkspaceConfig | null {
   const obj = input as Record<string, unknown>;
   const defaults = parseDefaults(obj.defaults);
   const checks = validateCheckOverrides(obj.checks);
+  const scripts = validateScripts(obj.scripts);
   const notify = typeof obj.notifyOnRunComplete === 'boolean' ? obj.notifyOnRunComplete : undefined;
   const houseRules = validateHouseRules(obj.houseRules);
   if (obj.mode === 'github' && typeof obj.owner === 'string' && typeof obj.repo === 'string') {
     const cfg: GitHubWorkspaceConfig = { mode: 'github', owner: obj.owner, repo: obj.repo };
     if (defaults) cfg.defaults = defaults;
     if (checks) cfg.checks = checks;
+    if (scripts) cfg.scripts = scripts;
     if (notify !== undefined) cfg.notifyOnRunComplete = notify;
     if (houseRules !== undefined) cfg.houseRules = houseRules;
     return cfg;
@@ -150,6 +200,7 @@ function validateConfig(input: unknown): WorkspaceConfig | null {
     const cfg: LocalWorkspaceConfig = { mode: 'local', name: obj.name, authorLogin: obj.authorLogin };
     if (defaults) cfg.defaults = defaults;
     if (checks) cfg.checks = checks;
+    if (scripts) cfg.scripts = scripts;
     if (notify !== undefined) cfg.notifyOnRunComplete = notify;
     if (houseRules !== undefined) cfg.houseRules = houseRules;
     return cfg;

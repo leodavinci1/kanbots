@@ -26,6 +26,7 @@ import { SplitModal } from './components/modals/SplitModal.js';
 import { ArchiveModal } from './components/modals/ArchiveModal.js';
 import { CloudSettingsModal } from './components/modals/CloudSettingsModal.js';
 import { HouseRulesSettingsModal } from './components/modals/HouseRulesSettingsModal.js';
+import { RepoScriptsSettingsModal } from './components/modals/RepoScriptsSettingsModal.js';
 import { ProvidersSettingsModal } from './components/modals/ProvidersSettingsModal.js';
 import { SentrySettingsModal } from './components/modals/SentrySettingsModal.js';
 import { Stats } from './components/Stats.js';
@@ -103,6 +104,9 @@ function ShellHost({
   const [providersSettingsOpen, setProvidersSettingsOpen] = useState(false);
   const [cloudSettingsOpen, setCloudSettingsOpen] = useState(false);
   const [houseRulesOpen, setHouseRulesOpen] = useState(false);
+  const [scriptsOpen, setScriptsOpen] = useState<
+    null | { autoRun?: 'setup' | 'cleanup' }
+  >(null);
   const [sentrySettingsOpen, setSentrySettingsOpen] = useState(false);
   const { mutate, issues } = useIssues();
 
@@ -112,6 +116,15 @@ function ShellHost({
     }
     window.addEventListener('kanbots:open-house-rules', onOpen);
     return () => window.removeEventListener('kanbots:open-house-rules', onOpen);
+  }, []);
+
+  useEffect(() => {
+    function onOpen(e: Event): void {
+      const detail = (e as CustomEvent<{ autoRun?: 'setup' | 'cleanup' }>).detail;
+      setScriptsOpen(detail?.autoRun ? { autoRun: detail.autoRun } : {});
+    }
+    window.addEventListener('kanbots:open-repo-scripts', onOpen);
+    return () => window.removeEventListener('kanbots:open-repo-scripts', onOpen);
   }, []);
 
   useEffect(() => {
@@ -206,6 +219,7 @@ function ShellHost({
                 onOpenProviders={() => setProvidersSettingsOpen(true)}
                 onOpenCloud={() => setCloudSettingsOpen(true)}
                 onOpenRules={() => setHouseRulesOpen(true)}
+                onOpenScripts={() => setScriptsOpen({})}
                 onOpenSentry={() => setSentrySettingsOpen(true)}
               />
             ) : null
@@ -261,6 +275,12 @@ function ShellHost({
       ) : null}
       {houseRulesOpen ? (
         <HouseRulesSettingsModal onClose={() => setHouseRulesOpen(false)} />
+      ) : null}
+      {scriptsOpen !== null ? (
+        <RepoScriptsSettingsModal
+          onClose={() => setScriptsOpen(null)}
+          {...(scriptsOpen.autoRun ? { autoRun: scriptsOpen.autoRun } : {})}
+        />
       ) : null}
       {sentrySettingsOpen ? (
         <SentrySettingsModal onClose={() => setSentrySettingsOpen(false)} />

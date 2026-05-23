@@ -1,4 +1,5 @@
 import { startPreview, type PreviewHandle } from '@kanbots/dispatcher';
+import { readWorkspaceConfig } from '@kanbots/local-store';
 import { z } from 'zod';
 import type { PreviewStatePayload } from '../bridge.js';
 import { badRequest, notFound, parseArgs } from './errors.js';
@@ -14,7 +15,12 @@ export interface PreviewArgs {
   runId: number;
 }
 
-export type StartPreviewImpl = (opts: { cwd: string }) => Promise<PreviewHandle>;
+export interface StartPreviewImplOptions {
+  cwd: string;
+  startCommandLine?: string;
+}
+
+export type StartPreviewImpl = (opts: StartPreviewImplOptions) => Promise<PreviewHandle>;
 
 const handles = new Map<number, PreviewHandle>();
 
@@ -53,9 +59,24 @@ export async function startRunPreview(
   const startImpl: StartPreviewImpl =
     deps.startPreviewImpl ?? ((opts) => startPreview(opts));
 
+  // Per-repo dev-server override, set via Settings → Repos. Falls back to
+  // dispatcher's default `pnpm dev` if the user hasn't configured one.
+  let startCommandLine: string | undefined;
+  if (deps.config.repoPath) {
+    try {
+      const cfg = await readWorkspaceConfig(deps.config.repoPath);
+      startCommandLine = cfg?.scripts?.devServer;
+    } catch {
+      // ignore — fall back to dispatcher default.
+    }
+  }
+
   deps.store.agentRuns.update(parsed.runId, { previewState: 'booting' });
   try {
-    const handle = await startImpl({ cwd: run.worktreePath });
+    const handle = await startImpl({
+      cwd: run.worktreePath,
+      ...(startCommandLine !== undefined ? { startCommandLine } : {}),
+    });
     handles.set(parsed.runId, handle);
     deps.store.agentRuns.update(parsed.runId, {
       previewUrl: handle.url,
