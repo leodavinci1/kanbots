@@ -31,20 +31,29 @@ import type {
   ProviderSettingsInput,
   ProviderTestConnectionResult,
   ProvidersPayload,
+  ReviewCommentPayload,
   SentryConfigInput,
   SentryConfigPayload,
   SentrySuggestion,
   SentrySyncResult,
   SentryTestConnectionResult,
+  ShipCommitResult,
+  ShipMergeResult,
+  ShipPRResult,
+  ShipStatus,
+  SlashCommandPayload,
   StatusKey,
   UpdateIssuePatch,
   Workspace,
   WorkspaceBudgets,
   WorkspaceFolderPayload,
   WorkspaceHouseRules,
+  WorkspaceScriptsBridgePayload,
+  WorkspaceRunScriptResult,
 } from './types.js';
 
 export type { PostMessageResult, UploadAttachmentResult } from './global.js';
+export type { ReviewCommentPayload } from './types.js';
 
 export interface ResolveCardResult {
   card: Card;
@@ -519,6 +528,39 @@ export const api = {
     invoke('workspace:get-house-rules', undefined),
   setWorkspaceHouseRules: (input: WorkspaceHouseRules): Promise<WorkspaceHouseRules> =>
     invoke('workspace:set-house-rules', input),
+  getWorkspaceScripts: (): Promise<WorkspaceScriptsBridgePayload> =>
+    invoke('workspace:get-scripts', undefined),
+  setWorkspaceScripts: (input: {
+    devServer?: string | null;
+    setup?: string | null;
+    cleanup?: string | null;
+  }): Promise<WorkspaceScriptsBridgePayload> => invoke('workspace:set-scripts', input),
+  runWorkspaceScript: (kind: 'setup' | 'cleanup'): Promise<WorkspaceRunScriptResult> =>
+    invoke('workspace:run-script', { kind }),
+  getReviewComments: (
+    runId: number,
+    includeConsumed?: boolean,
+  ): Promise<ReviewCommentPayload[]> =>
+    invoke('review-comments:list', {
+      runId,
+      ...(includeConsumed ? { includeConsumed } : {}),
+    }),
+  listReviewCommentsForFile: (
+    runId: number,
+    filePath: string,
+  ): Promise<ReviewCommentPayload[]> =>
+    invoke('review-comments:list-for-file', { runId, filePath }),
+  addReviewComment: (input: {
+    runId: number;
+    filePath: string;
+    lineNumber: number;
+    side: 'old' | 'new' | 'context';
+    body: string;
+  }): Promise<ReviewCommentPayload> => invoke('review-comments:add', input),
+  removeReviewComment: (id: number): Promise<{ ok: boolean }> =>
+    invoke('review-comments:remove', { id }),
+  consumeReviewComments: (runId: number): Promise<ReviewCommentPayload[]> =>
+    invoke('review-comments:consume-pending', { runId }),
   listFolders: (): Promise<WorkspaceFolderPayload[]> => {
     if (cloudCtx !== null) return Promise.resolve([]);
     return invoke('folders:list', undefined);
@@ -537,6 +579,15 @@ export const api = {
   getCheckCommands: (): Promise<
     Record<'typecheck' | 'tests' | 'lint' | 'e2e', { command: string; args: string[] }>
   > => invoke('agent-runs:checks:commands', undefined),
+  /**
+   * List the slash commands available for the given agent CLI. Combines
+   * the CLI's built-in catalog with user-authored commands and skills
+   * discovered on disk, plus kanbots orchestration commands. Result is
+   * cached server-side for 30s so a burst of `/` keypresses in the
+   * composer typeahead is cheap.
+   */
+  getSlashCommands: (agent: ProviderId): Promise<SlashCommandPayload[]> =>
+    invoke('agent-cli:slash-commands', { agent }),
   runAgentRunChecks: (
     runId: number,
     kinds?: Array<'typecheck' | 'tests' | 'lint' | 'e2e'>,
@@ -555,6 +606,28 @@ export const api = {
     invoke('issues:approve', { number: issueNumber }),
   requestChangesIssue: (issueNumber: number): Promise<Issue> =>
     invoke('issues:request-changes', { number: issueNumber }),
+  shipStatus: (issueNumber: number): Promise<ShipStatus> =>
+    invoke('ship:status', { issueNumber }),
+  shipCommit: (
+    issueNumber: number,
+    message?: string,
+  ): Promise<ShipCommitResult> =>
+    invoke('ship:commit', {
+      issueNumber,
+      ...(message !== undefined ? { message } : {}),
+    }),
+  shipMerge: (
+    issueNumber: number,
+    targetBranch: string,
+  ): Promise<ShipMergeResult> =>
+    invoke('ship:merge', { issueNumber, targetBranch }),
+  shipCreatePR: (input: {
+    issueNumber: number;
+    targetBranch?: string;
+    title?: string;
+    body?: string;
+    draft?: boolean;
+  }): Promise<ShipPRResult> => invoke('ship:create-pr', input),
   archiveIssue: async (issueNumber: number): Promise<Issue> => {
     if (cloudCtx !== null) {
       // Cloud archive is a soft-delete (sets archived_at) — it's the DELETE

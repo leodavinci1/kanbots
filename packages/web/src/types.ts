@@ -56,6 +56,7 @@ export type {
   ProviderSettingsPayload,
   ProviderTestConnectionResult,
   ProvidersPayload,
+  ReviewCommentPayload,
   Role,
   SentryConfigInput,
   SentryConfigPayload,
@@ -67,12 +68,19 @@ export type {
   SentrySuggestionVerdict,
   SentrySyncResult,
   SentryTestConnectionResult,
+  ShipCommitResult,
+  ShipMergeResult,
+  ShipPRResult,
+  ShipStatus,
+  SlashCommandPayload,
   StatusKey,
   UpdateIssuePatch,
   Workspace,
   WorkspaceBudgets,
   WorkspaceFolderPayload,
   WorkspaceHouseRules,
+  WorkspaceScriptsBridgePayload,
+  WorkspaceRunScriptResult,
 } from '@kanbots/api';
 
 // User shape isn't in @kanbots/api directly — it's the inline type on

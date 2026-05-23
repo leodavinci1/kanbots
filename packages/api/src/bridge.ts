@@ -431,6 +431,52 @@ export interface WorkspaceHouseRules {
   houseRules: string | null;
 }
 
+export interface WorkspaceScriptsBridgePayload {
+  scripts: {
+    devServer?: string;
+    setup?: string;
+    cleanup?: string;
+  };
+}
+
+export interface WorkspaceRunScriptResult {
+  ok: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+  error?: string;
+}
+
+/**
+ * Inline review comment captured against a worktree diff. Stored locally
+ * keyed on (run, file, line, side) and consumed by the composer the next
+ * time the user posts a message to the run, prepending the accumulated
+ * comments so the agent can act on them.
+ */
+export interface ReviewCommentPayload {
+  id: number;
+  runId: number;
+  filePath: string;
+  lineNumber: number;
+  side: 'old' | 'new' | 'context';
+  body: string;
+  createdAt: string;
+  consumedAt: string | null;
+}
+
+/**
+ * Discovered slash command surface for the chat composer typeahead. The
+ * `source` tag lets the renderer style entries differently (built-in vs.
+ * user-authored vs. kanbots orchestration).
+ */
+export interface SlashCommandPayload {
+  name: string;
+  description: string;
+  source: 'builtin' | 'user' | 'skill' | 'kanbots';
+}
+
 export interface WorkspaceFolderPayload {
   id: string;
   workspaceId: string;
@@ -490,6 +536,31 @@ export type AgentRunEventPayload =
   | { subscriptionId: string; kind: 'card'; card: Card }
   | { subscriptionId: string; kind: 'status'; status: AgentRunStatus }
   | { subscriptionId: string; kind: 'end' };
+
+export interface ShipStatus {
+  runId: number | null;
+  branchName: string | null;
+  worktreePath: string | null;
+  hasUncommittedChanges: boolean;
+  commitsAheadOfDefault: number;
+  defaultMergeTarget: string;
+  availableTargets: string[];
+}
+
+export interface ShipMergeResult {
+  merged: true;
+  targetBranch: string;
+  mergeCommitSha: string;
+  baseCheckoutPath: string;
+}
+
+export interface ShipPRResult {
+  pr: PullRequest;
+}
+
+export interface ShipCommitResult {
+  commitSha: string;
+}
 
 export interface BridgeChannels {
   'config:get': { args: void; result: Config };
@@ -556,6 +627,28 @@ export interface BridgeChannels {
     args: { number: number; threadId?: number; prompt?: string; model?: string };
     result: AgentRun;
   };
+  'ship:status': {
+    args: { issueNumber: number };
+    result: ShipStatus;
+  };
+  'ship:commit': {
+    args: { issueNumber: number; message?: string };
+    result: ShipCommitResult;
+  };
+  'ship:merge': {
+    args: { issueNumber: number; targetBranch: string };
+    result: ShipMergeResult;
+  };
+  'ship:create-pr': {
+    args: {
+      issueNumber: number;
+      targetBranch?: string;
+      title?: string;
+      body?: string;
+      draft?: boolean;
+    };
+    result: ShipPRResult;
+  };
   'agent-runs:get': { args: { runId: number }; result: AgentRun };
   'agent-runs:stop': { args: { runId: number }; result: AgentRun };
   'agent-runs:diff': { args: { runId: number }; result: DiffPayload };
@@ -572,6 +665,10 @@ export interface BridgeChannels {
   'agent-runs:checks:commands': {
     args: void;
     result: Record<CheckKind, { command: string; args: string[] }>;
+  };
+  'agent-cli:slash-commands': {
+    args: { agent: ProviderId };
+    result: SlashCommandPayload[];
   };
   'agent-runs:preview:get': {
     args: { runId: number };
@@ -625,6 +722,42 @@ export interface BridgeChannels {
   'workspace:set-house-rules': {
     args: { houseRules: string | null };
     result: WorkspaceHouseRules;
+  };
+  'workspace:get-scripts': { args: void; result: WorkspaceScriptsBridgePayload };
+  'workspace:set-scripts': {
+    args: {
+      devServer?: string | null;
+      setup?: string | null;
+      cleanup?: string | null;
+    };
+    result: WorkspaceScriptsBridgePayload;
+  };
+  'workspace:run-script': {
+    args: { kind: 'setup' | 'cleanup' };
+    result: WorkspaceRunScriptResult;
+  };
+  'review-comments:list': {
+    args: { runId: number; includeConsumed?: boolean };
+    result: ReviewCommentPayload[];
+  };
+  'review-comments:list-for-file': {
+    args: { runId: number; filePath: string };
+    result: ReviewCommentPayload[];
+  };
+  'review-comments:add': {
+    args: {
+      runId: number;
+      filePath: string;
+      lineNumber: number;
+      side: 'old' | 'new' | 'context';
+      body: string;
+    };
+    result: ReviewCommentPayload;
+  };
+  'review-comments:remove': { args: { id: number }; result: { ok: boolean } };
+  'review-comments:consume-pending': {
+    args: { runId: number };
+    result: ReviewCommentPayload[];
   };
   'folders:list': { args: void; result: WorkspaceFolderPayload[] };
   'folders:add': {

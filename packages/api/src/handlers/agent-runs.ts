@@ -368,7 +368,7 @@ export async function sweepAllRunsForThread(
 // execFileAsync's default error message is "Command failed: <cmd>", which
 // hides git's actual stderr (e.g., "nothing to commit, working tree clean").
 // Surface the stderr so the UI shows an actionable message.
-async function runGit(
+export async function runGit(
   args: string[],
   cwd: string,
 ): Promise<{ stdout: string; stderr: string }> {
@@ -385,7 +385,7 @@ async function runGit(
   }
 }
 
-async function locateBaseCheckout(
+export async function locateBaseCheckout(
   repoPath: string,
   base: string,
 ): Promise<string | null> {
@@ -412,7 +412,7 @@ async function locateBaseCheckout(
   return null;
 }
 
-async function isWorktreeClean(path: string): Promise<boolean> {
+export async function isWorktreeClean(path: string): Promise<boolean> {
   try {
     const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: path });
     return stdout.trim() === '';
@@ -526,7 +526,7 @@ export async function promotePr(
   return { pr };
 }
 
-async function detectLocalBase(repoPath: string): Promise<string> {
+export async function detectLocalBase(repoPath: string): Promise<string> {
   for (const ref of ['main', 'master']) {
     try {
       await execFileAsync('git', ['rev-parse', '--verify', ref], { cwd: repoPath });
@@ -580,6 +580,15 @@ async function detectBase(cwd: string): Promise<string> {
 }
 
 async function diffAgainstBase(cwd: string, base: string): Promise<DiffFile[]> {
+  // Unborn HEAD (worktree on a fresh branch with no commits yet): nothing is
+  // tracked, so there's no base to diff against. Untracked files are picked
+  // up separately by listUntrackedFiles.
+  try {
+    await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], { cwd });
+  } catch {
+    return [];
+  }
+
   // Diff against the fork point so we only see what this worktree changed —
   // both committed and uncommitted. `base...HEAD` would miss uncommitted work,
   // and a plain `git diff base` would also include commits that landed on

@@ -1,5 +1,5 @@
 import { useDraggable } from '@dnd-kit/core';
-import { memo, useState, type MouseEvent } from 'react';
+import { memo, useEffect, useState, type ChangeEvent, type MouseEvent } from 'react';
 import { api } from '../api.js';
 import { dispatchIssuesRefetch } from '../hooks/useIssues.js';
 import {
@@ -10,7 +10,7 @@ import {
   strippedBranch,
   tagFromLabels,
 } from '../labels.js';
-import type { Issue, IssueActiveRun } from '../types.js';
+import type { Issue, IssueActiveRun, ShipStatus } from '../types.js';
 
 export function cardDragId(issueNumber: number): string {
   return `card:${issueNumber}`;
@@ -205,17 +205,13 @@ function ReviewActions({
   issueNumber: number;
   onAction?: () => void;
 }) {
+  const [shipOpen, setShipOpen] = useState(false);
   function stop(e: MouseEvent<HTMLDivElement>): void {
     e.stopPropagation();
   }
-  function approve(e: MouseEvent<HTMLButtonElement>): void {
+  function toggleShip(e: MouseEvent<HTMLButtonElement>): void {
     e.stopPropagation();
-    void api
-      .approveIssue(issueNumber)
-      .then(() => {
-        dispatchIssuesRefetch();
-        onAction?.();
-      });
+    setShipOpen((v) => !v);
   }
   function requestChanges(e: MouseEvent<HTMLButtonElement>): void {
     e.stopPropagation();
@@ -235,17 +231,202 @@ function ReviewActions({
         onAction?.();
       });
   }
+  function handleShipped(): void {
+    setShipOpen(false);
+    void api.approveIssue(issueNumber).then(() => {
+      dispatchIssuesRefetch();
+      onAction?.();
+    });
+  }
   return (
     <div className="kb-card-actions" onClick={stop}>
-      <button type="button" className="kb-btn primary" onClick={approve}>
-        Approve & merge
-      </button>
-      <button type="button" className="kb-btn" onClick={requestChanges}>
-        Request changes
-      </button>
-      <button type="button" className="kb-btn ghost" onClick={spawnReviewer}>
-        Run reviewer
-      </button>
+      <div className="kb-card-actions-row">
+        <button type="button" className="kb-btn primary" onClick={toggleShip}>
+          {shipOpen ? 'Cancel' : 'Ship…'}
+        </button>
+        <button type="button" className="kb-btn" onClick={requestChanges}>
+          Request changes
+        </button>
+        <button type="button" className="kb-btn ghost" onClick={spawnReviewer}>
+          Run reviewer
+        </button>
+      </div>
+      {shipOpen ? (
+        <ShipPanel
+          issueNumber={issueNumber}
+          onShipped={handleShipped}
+          onCancel={() => setShipOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ShipPanel({
+  issueNumber,
+  onShipped,
+  onCancel,
+}: {
+  issueNumber: number;
+  onShipped: () => void;
+  onCancel: () => void;
+}) {
+  const [status, setStatus] = useState<ShipStatus | null>(null);
+  const [target, setTarget] = useState<string>('');
+  const [busy, setBusy] = useState<null | 'merge' | 'pr'>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .shipStatus(issueNumber)
+      .then((s) => {
+        if (cancelled) return;
+        setStatus(s);
+        setTarget(s.defaultMergeTarget);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [issueNumber]);
+
+  async function ensureCommitted(): Promise<boolean> {
+    if (!status?.hasUncommittedChanges) return true;
+    const ok = window.confirm(
+      'This worktree has uncommitted changes. Commit them automatically before shipping?',
+    );
+    if (!ok) return false;
+    try {
+      await api.shipCommit(issueNumber);
+      const refreshed = await api.shipStatus(issueNumber);
+      setStatus(refreshed);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }
+
+  async function onMerge(e: MouseEvent<HTMLButtonElement>): Promise<void> {
+    e.stopPropagation();
+    if (!target) return;
+    setBusy('merge');
+    setError(null);
+    if (!(await ensureCommitted())) {
+      setBusy(null);
+      return;
+    }
+    try {
+      await api.shipMerge(issueNumber, target);
+      onShipped();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onCreatePR(e: MouseEvent<HTMLButtonElement>): Promise<void> {
+    e.stopPropagation();
+    setBusy('pr');
+    setError(null);
+    if (!(await ensureCommitted())) {
+      setBusy(null);
+      return;
+    }
+    try {
+      const result = await api.shipCreatePR({
+        issueNumber,
+        ...(target ? { targetBranch: target } : {}),
+      });
+      window.open(result.pr.htmlUrl, '_blank');
+      onShipped();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function onChangeTarget(e: ChangeEvent<HTMLSelectElement>): void {
+    setTarget(e.target.value);
+  }
+
+  if (status === null && error === null) {
+    return (
+      <div className="kb-ship-panel" aria-busy>
+        Loading branch info…
+      </div>
+    );
+  }
+
+  return (
+    <div className="kb-ship-panel">
+      {status?.branchName ? (
+        <div className="kb-ship-row">
+          <span className="kb-ship-label">From</span>
+          <code className="kb-ship-branch">{status.branchName}</code>
+          {status.commitsAheadOfDefault > 0 ? (
+            <span className="kb-ship-ahead">
+              {status.commitsAheadOfDefault} commit
+              {status.commitsAheadOfDefault === 1 ? '' : 's'} ahead
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="kb-ship-row">
+        <label className="kb-ship-label" htmlFor={`ship-target-${issueNumber}`}>
+          Target
+        </label>
+        <select
+          id={`ship-target-${issueNumber}`}
+          className="kb-input"
+          value={target}
+          onChange={onChangeTarget}
+        >
+          {(status?.availableTargets ?? []).map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+      </div>
+      {status?.hasUncommittedChanges ? (
+        <div className="kb-ship-warn">
+          Worktree has uncommitted changes — you&rsquo;ll be asked before
+          shipping.
+        </div>
+      ) : null}
+      {error !== null ? (
+        <div className="kb-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <div className="kb-ship-actions">
+        <button
+          type="button"
+          className="kb-btn primary"
+          disabled={busy !== null || !target}
+          onClick={onMerge}
+        >
+          {busy === 'merge' ? 'Merging…' : 'Merge'}
+        </button>
+        <button
+          type="button"
+          className="kb-btn"
+          disabled={busy !== null || !status?.branchName}
+          onClick={onCreatePR}
+        >
+          {busy === 'pr' ? 'Opening PR…' : 'Open PR'}
+        </button>
+        <button type="button" className="kb-btn ghost" onClick={onCancel}>
+          Close
+        </button>
+      </div>
     </div>
   );
 }

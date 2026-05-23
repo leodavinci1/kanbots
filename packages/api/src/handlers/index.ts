@@ -6,6 +6,7 @@ import type {
 } from '../bridge.js';
 import * as agentActions from './agent-actions.js';
 import * as agentChecks from './agent-checks.js';
+import * as agentCli from './agent-cli.js';
 import * as agentEvents from './agent-events.js';
 import * as agentPreview from './agent-preview.js';
 import * as agentRuns from './agent-runs.js';
@@ -23,7 +24,9 @@ import * as issues from './issues.js';
 import * as learnings from './learnings.js';
 import * as providers from './providers.js';
 import type { ProvidersHandlerDeps } from './providers.js';
+import * as reviewComments from './review-comments.js';
 import * as sentry from './sentry.js';
+import * as ship from './ship.js';
 import type {
   ChatToolRuntime,
   CreateHandlersOptions,
@@ -80,6 +83,10 @@ export function createHandlers(opts: CreateHandlersOptions): Handlers {
     'issues:request-changes': (args) => agentActions.requestChanges(deps, args),
     'issues:split': (args) => agentActions.split(deps, args),
     'issues:reviewer': (args) => agentActions.reviewer(deps, args),
+    'ship:status': (args) => ship.status(deps, args),
+    'ship:commit': (args) => ship.commit(deps, args),
+    'ship:merge': (args) => ship.merge(deps, args),
+    'ship:create-pr': (args) => ship.createPR(deps, args),
     'agent-runs:get': (args) => agentRuns.get(deps, args),
     'agent-runs:stop': (args) => agentRuns.stop(deps, args),
     'agent-runs:diff': (args) => agentRuns.diff(deps, args),
@@ -88,6 +95,7 @@ export function createHandlers(opts: CreateHandlersOptions): Handlers {
     'agent-runs:checks:list': (args) => agentChecks.list(deps, args),
     'agent-runs:checks:run': (args) => agentChecks.runChecks(deps, args),
     'agent-runs:checks:commands': () => agentChecks.commands(deps),
+    'agent-cli:slash-commands': (args) => agentCli.slashCommands(deps, args),
     'agent-runs:preview:get': (args) => agentPreview.getPreview(deps, args),
     'agent-runs:preview:start': (args) =>
       agentPreview.startRunPreview(deps, args),
@@ -111,6 +119,15 @@ export function createHandlers(opts: CreateHandlersOptions): Handlers {
     'workspace:set-budgets': (args) => workspace.setBudgets(deps, args),
     'workspace:get-house-rules': () => workspace.getHouseRules(deps),
     'workspace:set-house-rules': (args) => workspace.setHouseRules(deps, args),
+    'workspace:get-scripts': () => workspace.getScripts(deps),
+    'workspace:set-scripts': (args) => workspace.setScripts(deps, args),
+    'workspace:run-script': (args) => workspace.runScript(deps, args),
+    'review-comments:list': (args) => reviewComments.list(deps, args),
+    'review-comments:list-for-file': (args) => reviewComments.listForFile(deps, args),
+    'review-comments:add': (args) => reviewComments.add(deps, args),
+    'review-comments:remove': (args) => reviewComments.remove(deps, args),
+    'review-comments:consume-pending': (args) =>
+      reviewComments.consumePending(deps, args),
     'folders:list': () => workspace.listFolders(deps),
     'folders:add': (args) => workspace.addFolder(deps, args),
     'composer:draft': (args) => composer.draft(deps, args),

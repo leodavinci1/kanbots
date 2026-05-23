@@ -196,10 +196,51 @@
   opacity: 0.6;
 }
 .kb-stats-line {
-  margin-left: auto;
   color: var(--ink-3);
   font-size: 11.5px;
   font-family: var(--ff-mono);
+}
+
+/* Board sort selector — sits in the filter row before the stats line.
+   margin-left:auto pushes it (and stats) to the right edge. */
+.kb-board-sort {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.kb-board-sort-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.kb-board-sort-select {
+  appearance: none;
+  background: var(--bg-1);
+  border: 1px solid var(--hairline);
+  color: var(--ink-1);
+  font: 500 11px var(--ff-sans);
+  padding: 2px 22px 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 50%,
+    calc(100% - 8px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+.kb-board-sort-select:hover {
+  border-color: var(--hairline-soft);
+  color: var(--ink);
+}
+.kb-board-sort-select:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 /* Cost usage row — sits below the filter row, mirrors claude-code's
@@ -884,6 +925,11 @@
 /* Review-card inline actions */
 .kb-card-actions {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kb-card-actions-row {
+  display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
@@ -891,6 +937,54 @@
   height: 24px;
   padding: 0 9px;
   font-size: 11px;
+}
+
+/* Ship-from-review panel */
+.kb-ship-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  font-size: 11px;
+}
+.kb-ship-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kb-ship-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  min-width: 42px;
+}
+.kb-ship-branch {
+  font-family: var(--ff-mono, monospace);
+  font-size: 11px;
+  color: var(--ink);
+}
+.kb-ship-ahead {
+  font-size: 10px;
+  color: var(--accent);
+}
+.kb-ship-warn {
+  font-size: 10px;
+  color: var(--warning, #b45309);
+}
+.kb-ship-actions {
+  display: flex;
+  gap: 5px;
+  margin-top: 2px;
+}
+.kb-ship-panel select.kb-input {
+  height: 22px;
+  font-size: 11px;
+  padding: 0 4px;
+  flex: 1;
 }
 
 /* Sentry origin badge on cards */
