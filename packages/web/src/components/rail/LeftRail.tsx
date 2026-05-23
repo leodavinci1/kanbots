@@ -20,6 +20,7 @@ export interface LeftRailProps {
   onOpenProviders?: () => void;
   onOpenCloud?: () => void;
   onOpenRules?: () => void;
+  onOpenScripts?: () => void;
   onOpenSentry?: () => void;
 }
 
@@ -195,6 +196,7 @@ export function LeftRail({
   onOpenProviders,
   onOpenCloud,
   onOpenRules,
+  onOpenScripts,
   onOpenSentry,
 }: LeftRailProps) {
   const ws = useWorkspace();
@@ -365,6 +367,15 @@ export function LeftRail({
             >
               <span className="kb-rail-account-icon" aria-hidden>📜</span>
               House rules
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="kb-rail-account-item"
+              onClick={() => pick(onOpenScripts)}
+            >
+              <span className="kb-rail-account-icon" aria-hidden>▸_</span>
+              Repo scripts
             </button>
             <div className="kb-rail-account-sep" role="separator" />
             <button

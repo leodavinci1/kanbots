@@ -46,9 +46,15 @@
   border-color: var(--ink-2);
 }
 
-/* Collapsible-section header (clickable button form of .kb-rail-label). */
+/* Collapsible-section header: a row with a toggle button + optional trailing
+   action (e.g. a "+" button). Toggle and trailing are siblings — nesting
+   <button> in <button> is invalid HTML and breaks hydration. */
+.kb-rail-label-row {
+  display: flex;
+  align-items: center;
+}
 .kb-rail-label-button {
-  width: 100%;
+  flex: 1 1 auto;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -79,12 +85,13 @@
 .kb-rail-label-trailing {
   display: inline-flex;
   align-items: center;
-  margin-left: auto;
   text-transform: none;
   letter-spacing: 0;
+  padding: 0 6px 8px 0;
 }
 .kb-rail-collapsible.is-collapsed { padding-bottom: 4px; }
-.kb-rail-collapsible.is-collapsed .kb-rail-label-button { padding-bottom: 4px; }
+.kb-rail-collapsible.is-collapsed .kb-rail-label-button,
+.kb-rail-collapsible.is-collapsed .kb-rail-label-trailing { padding-bottom: 4px; }
 
 /* Workspace card */
 .kb-workspace {
@@ -208,6 +215,62 @@
   width: 100%;
 }
 .kb-tree-header:hover { background: var(--bg-3, var(--bg-2)); }
+
+/* Search + bulk-expand toolbar above the tree body. Search dominates the
+   row; the expand/collapse actions sit beside it as compact 24×24 icon
+   buttons. Keeps the toolbar at a single rail-friendly row while leaving
+   the filter input room to breathe even in narrow rails. */
+.kb-tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.kb-tree-search {
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  background: var(--bg-inset);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--ink);
+  padding: 0 8px;
+  font: 500 11.5px var(--ff-sans);
+  letter-spacing: 0.01em;
+}
+.kb-tree-search::placeholder { color: var(--ink-4); }
+.kb-tree-search:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.kb-tree-tool {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--hairline-soft);
+  color: var(--ink-3);
+  padding: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.kb-tree-tool:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--hairline);
+  background: var(--bg-1);
+}
+.kb-tree-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .kb-tree-header-name {
   font-size: 12px;
   color: var(--ink);

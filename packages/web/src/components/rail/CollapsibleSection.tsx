@@ -67,18 +67,20 @@ export function CollapsibleSection({
     <div
       className={`kb-rail-section kb-rail-collapsible${collapsed ? ' is-collapsed' : ''}${className ? ` ${className}` : ''}`}
     >
-      <button
-        type="button"
-        className="kb-rail-label kb-rail-label-button"
-        aria-expanded={!collapsed}
-        onClick={toggle}
-      >
-        <span className="kb-rail-label-caret" aria-hidden>
-          {collapsed ? '▸' : '▾'}
-        </span>
-        <span className="kb-rail-label-text">{label}</span>
+      <div className="kb-rail-label-row">
+        <button
+          type="button"
+          className="kb-rail-label kb-rail-label-button"
+          aria-expanded={!collapsed}
+          onClick={toggle}
+        >
+          <span className="kb-rail-label-caret" aria-hidden>
+            {collapsed ? '▸' : '▾'}
+          </span>
+          <span className="kb-rail-label-text">{label}</span>
+        </button>
         {trailing ? <span className="kb-rail-label-trailing">{trailing}</span> : null}
-      </button>
+      </div>
       {collapsed ? null : <div className="kb-rail-section-body">{children}</div>}
     </div>
   );

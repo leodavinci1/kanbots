@@ -52,6 +52,8 @@ type TreeAction =
   | { kind: 'load-start'; path: string }
   | { kind: 'load-done'; path: string; entries: Entry[] }
   | { kind: 'toggle'; path: string }
+  | { kind: 'expand-many'; paths: string[] }
+  | { kind: 'collapse-all' }
   | { kind: 'reset' };
 
 function reducer(state: TreeState, action: TreeAction): TreeState {
@@ -76,6 +78,15 @@ function reducer(state: TreeState, action: TreeAction): TreeState {
       else expanded.add(action.path);
       return { ...state, expanded };
     }
+    case 'expand-many': {
+      const expanded = new Set(state.expanded);
+      for (const p of action.paths) expanded.add(p);
+      return { ...state, expanded };
+    }
+    case 'collapse-all':
+      // Keep the root expanded so the tree still renders entries; users
+      // can still toggle it via the parent dir UI if they want.
+      return { ...state, expanded: new Set(['']) };
     case 'reset':
       return { expanded: new Set([]), children: {}, loading: new Set() };
   }
@@ -140,6 +151,57 @@ function countTouchedDescendants(
   return n;
 }
 
+/**
+ * Walk loaded directory children and collect paths that match the search
+ * query. An entry matches when its file/dir name contains `query`
+ * (case-insensitive). A dir is also added if any descendant matches —
+ * lets us keep the tree shape so users can see *why* a query matched.
+ */
+function computeMatchedPaths(
+  query: string,
+  children: ChildrenCache,
+): ReadonlySet<string> {
+  const matched = new Set<string>();
+  if (query === '') return matched;
+  const needle = query.toLowerCase();
+
+  function walk(path: string): boolean {
+    const entries = children[path];
+    if (entries === undefined) return false;
+    let hadMatchHere = false;
+    for (const e of entries) {
+      const nameMatches = e.name.toLowerCase().includes(needle);
+      let descendantMatches = false;
+      if (e.type === 'dir') descendantMatches = walk(e.path);
+      if (nameMatches || descendantMatches) {
+        matched.add(e.path);
+        hadMatchHere = true;
+      }
+    }
+    return hadMatchHere;
+  }
+  walk('');
+  return matched;
+}
+
+/**
+ * For each path in `keys`, emit every ancestor directory (e.g.
+ * "a/b/c.ts" → ["a", "a/b"]). Used by Expand-changes to open every
+ * folder along the way to a touched file.
+ */
+function ancestorDirsForKeys(keys: string[]): string[] {
+  const out = new Set<string>();
+  for (const key of keys) {
+    const parts = key.split('/');
+    let acc = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      acc = acc === '' ? parts[i]! : `${acc}/${parts[i]!}`;
+      out.add(acc);
+    }
+  }
+  return Array.from(out);
+}
+
 function badgeChar(status: StatusCode): string {
   switch (status) {
     case '??':
@@ -165,10 +227,34 @@ interface RowProps {
   rootPath: string;
   dispatch: React.Dispatch<TreeAction>;
   onOpenChange: (filePath: string, worktrees: string[]) => void;
+  // Search context. Empty `query` means "no active search — show
+  // everything". A non-empty query hides rows that aren't in
+  // `matchedPaths` and forces dirs in `matchedPaths` to render expanded
+  // so users can see why their query matched.
+  query: string;
+  matchedPaths: ReadonlySet<string>;
 }
 
-function TreeRow({ entry, depth, state, touched, rootPath, dispatch, onOpenChange }: RowProps) {
-  const expanded = state.expanded.has(entry.path);
+function TreeRow({
+  entry,
+  depth,
+  state,
+  touched,
+  rootPath,
+  dispatch,
+  onOpenChange,
+  query,
+  matchedPaths,
+}: RowProps) {
+  const isSearching = query !== '';
+  // NOTE: filter decisions must happen AFTER all hooks below so the
+  // hook order stays stable when `query` flips a row in or out of the
+  // matched set. Returning before useEffect would change the per-render
+  // hook count and break the Rules of Hooks.
+  const hiddenBySearch = isSearching && !matchedPaths.has(entry.path);
+  const expanded =
+    state.expanded.has(entry.path) ||
+    (isSearching && entry.type === 'dir' && matchedPaths.has(entry.path));
   const loading = state.loading.has(entry.path);
   const children = state.children[entry.path];
 
@@ -185,6 +271,8 @@ function TreeRow({ entry, depth, state, touched, rootPath, dispatch, onOpenChang
       .then((entries) => dispatch({ kind: 'load-done', path: entry.path, entries }))
       .catch(() => dispatch({ kind: 'load-done', path: entry.path, entries: [] }));
   }, [entry.type, entry.path, expanded, children, loading, dispatch, rootPath]);
+
+  if (hiddenBySearch) return null;
 
   const touchedForThis = touched.get(entry.path);
   const descCount = entry.type === 'dir' ? countTouchedDescendants(touched, entry.path) : 0;
@@ -264,6 +352,8 @@ function TreeRow({ entry, depth, state, touched, rootPath, dispatch, onOpenChang
               rootPath={rootPath}
               dispatch={dispatch}
               onOpenChange={onOpenChange}
+              query={query}
+              matchedPaths={matchedPaths}
             />
           ))
         )
@@ -297,6 +387,7 @@ export function WorkspaceTree({ header, onSelectIssue }: WorkspaceTreeProps) {
     children: {} as ChildrenCache,
     loading: new Set<string>(),
   }));
+  const [query, setQuery] = useState('');
   const liveTouchedRef = useRef(
     new Map<string, { worktreePath: string | null }>(),
   );
@@ -402,6 +493,21 @@ export function WorkspaceTree({ header, onSelectIssue }: WorkspaceTreeProps) {
     [worktreeStatus, liveTouchedRef.current.size],
   );
 
+  const matchedPaths = useMemo(
+    () => computeMatchedPaths(query, state.children),
+    [query, state.children],
+  );
+
+  const handleExpandTouched = useCallback(() => {
+    const dirs = ancestorDirsForKeys(Array.from(touched.keys()));
+    if (dirs.length === 0) return;
+    dispatch({ kind: 'expand-many', paths: dirs });
+  }, [touched]);
+
+  const handleCollapseAll = useCallback(() => {
+    dispatch({ kind: 'collapse-all' });
+  }, []);
+
   const rootEntries = state.children[''];
 
   const handleHeaderRefresh = useCallback(() => {
@@ -422,6 +528,10 @@ export function WorkspaceTree({ header, onSelectIssue }: WorkspaceTreeProps) {
     );
   }
 
+  const hasTouched = touched.size > 0;
+  const isSearching = query !== '';
+  const noMatches = isSearching && matchedPaths.size === 0;
+
   return (
     <div className="kb-tree" role="tree" aria-label="Workspace files">
       {header ? (
@@ -437,12 +547,73 @@ export function WorkspaceTree({ header, onSelectIssue }: WorkspaceTreeProps) {
           ) : null}
         </button>
       ) : null}
+      <div className="kb-tree-toolbar">
+        <input
+          type="search"
+          className="kb-tree-search"
+          placeholder="Filter files…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Filter files by name"
+        />
+        <button
+          type="button"
+          className="kb-tree-tool"
+          onClick={handleExpandTouched}
+          disabled={!hasTouched}
+          title={
+            hasTouched
+              ? 'Expand every folder containing a changed file'
+              : 'No changed files to expand'
+          }
+          aria-label="Expand folders containing changes"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M7 10l5-5 5 5" />
+            <path d="M7 14l5 5 5-5" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="kb-tree-tool"
+          onClick={handleCollapseAll}
+          title="Collapse every folder"
+          aria-label="Collapse all folders"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M7 8l5 5 5-5" />
+            <path d="M7 16l5-5 5 5" />
+          </svg>
+        </button>
+      </div>
       {rootEntries === undefined ? (
         <div className="kb-tree-loading" style={{ paddingLeft: 8 }}>
           loading…
         </div>
       ) : rootEntries.length === 0 ? (
         <div className="kb-tree-empty">Empty directory.</div>
+      ) : noMatches ? (
+        <div className="kb-tree-empty">No files match “{query}”.</div>
       ) : (
         rootEntries.map((entry) => (
           <TreeRow
@@ -454,6 +625,8 @@ export function WorkspaceTree({ header, onSelectIssue }: WorkspaceTreeProps) {
             rootPath={rootPath}
             dispatch={dispatch}
             onOpenChange={(filePath, worktrees) => setOpenChange({ filePath, worktrees })}
+            query={query}
+            matchedPaths={matchedPaths}
           />
         ))
       )}
