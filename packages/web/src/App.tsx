@@ -327,15 +327,11 @@ export function App({
   const [cloudPromptDismissed, setCloudPromptDismissed] = useState<boolean>(
     initialCloudPromptDismissed,
   );
-  // When the user dismisses the cloud prompt or picks "open a folder" from
-  // the cloud picker, we route to the local WorkspacePicker. Tracked in
-  // local state so the choice persists for the session.
-  const [pickerMode, setPickerMode] = useState<'cloud' | 'local'>(
-    // First-run choice: signed in or skipped cloud previously → respect
-    // their prior preference (cloud picker by default for signed-in
-    // users; local picker for users who dismissed without signing in).
-    initialCloudAuthed ? 'cloud' : 'local',
-  );
+  // Local-first: every launch lands on the local WorkspacePicker. Signed-in
+  // users can switch to the Cloud picker via the explicit link there. The
+  // cloud picker mode is only entered by explicit user action (clicking the
+  // link, or signing in via the first-run prompt).
+  const [pickerMode, setPickerMode] = useState<'cloud' | 'local'>('local');
 
   // Cloud-only launch — phase 1: install the cloud ctx on api.ts before any
   // hook below fires its initial fetch. Setting module state during render
@@ -377,16 +373,22 @@ export function App({
     );
   }
 
-  // No workspace open → show a picker. Signed-in users land on the cloud
-  // picker (with an "Open a folder" escape hatch into the local picker);
-  // local-only users land on the local picker (with a "Sign in" option
-  // available through the left-rail/cloud-settings modal at all times).
+  // No workspace open → show a picker. Local-first: every user lands on the
+  // local picker by default. Signed-in users can switch to the cloud picker
+  // via the "Browse cloud projects" link; the cloud picker offers an "Open
+  // a folder" escape hatch back to local.
   if (hasBridge && workspace === null && cloudWorkspace === null) {
     if (pickerMode === 'local' || !cloudAuthed) {
       return (
         <WorkspacePicker
           initialRecents={initialRecents}
+          cloudAuthed={cloudAuthed}
           onOpened={() => window.location.reload()}
+          {...(cloudAuthed ? { onBrowseCloud: () => setPickerMode('cloud') } : {})}
+          onCloudAuthChanged={(authed) => {
+            setCloudAuthed(authed);
+            setCloudPromptDismissed(true);
+          }}
         />
       );
     }
