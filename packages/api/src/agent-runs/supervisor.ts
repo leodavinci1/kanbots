@@ -272,9 +272,7 @@ function threadAlreadyActiveError(run: AgentRun): ThreadAlreadyActiveError {
   return err;
 }
 
-export async function createSupervisor(
-  opts: CreateSupervisorOptions,
-): Promise<AgentSupervisor> {
+export async function createSupervisor(opts: CreateSupervisorOptions): Promise<AgentSupervisor> {
   const { store } = opts;
   const resolveRepoPath = (): string =>
     typeof opts.repoPath === 'function' ? opts.repoPath() : opts.repoPath;
@@ -394,7 +392,11 @@ export async function createSupervisor(
     emitter.emit(COOLDOWN_CHANNEL, snapshotCooldown());
   }
 
-  function applyRateLimit(reason: CooldownState['reason'], retryAfterMs: number | null, message: string): void {
+  function applyRateLimit(
+    reason: CooldownState['reason'],
+    retryAfterMs: number | null,
+    message: string,
+  ): void {
     consecutiveHits += 1;
     const backoffIdx = Math.min(consecutiveHits - 1, COOLDOWN_BACKOFF_MS.length - 1);
     const backoff = COOLDOWN_BACKOFF_MS[backoffIdx] ?? COOLDOWN_MAX_MS;
@@ -412,10 +414,13 @@ export async function createSupervisor(
       clearTimeout(cooldownClearTimer);
       cooldownClearTimer = null;
     }
-    cooldownClearTimer = setTimeout(() => {
-      cooldownClearTimer = null;
-      emitCooldown();
-    }, Math.max(0, (cooldownUntilMs ?? Date.now()) - Date.now()) + 50);
+    cooldownClearTimer = setTimeout(
+      () => {
+        cooldownClearTimer = null;
+        emitCooldown();
+      },
+      Math.max(0, (cooldownUntilMs ?? Date.now()) - Date.now()) + 50,
+    );
     emitCooldown();
   }
 
@@ -684,6 +689,7 @@ export async function createSupervisor(
         : entry.hasDecision && naturalStatus === 'complete'
           ? 'awaiting_input'
           : naturalStatus;
+      const exitDetail = (summary.stderr.trim() || summary.result?.text.trim() || '').trim();
       const exitReason = budgetReason
         ? `interrupted: ${budgetReason}`
         : summary.killedByStop
@@ -691,8 +697,10 @@ export async function createSupervisor(
             ? `stopped by user (SIGKILL after ${stopGracefulTimeoutMs}ms)`
             : 'stopped by user'
           : summary.exitCode !== 0
-            ? `exit code ${summary.exitCode ?? 'null'}: ${truncate(summary.stderr, 500)}`
-            : null;
+            ? `exit code ${summary.exitCode ?? 'null'}${exitDetail ? `: ${truncate(exitDetail, 500)}` : ''}`
+            : summary.result?.isError === true
+              ? truncate(exitDetail || 'agent reported an error', 500)
+              : null;
 
       // Terminal classification recorded for analytics + memory curator.
       // Awaiting-input is non-terminal so we leave success_signal alone there;
@@ -834,9 +842,7 @@ export async function createSupervisor(
     // and fall back to the thread-wide check otherwise (kept for
     // legacy issue-style chats that don't ride on sessions yet).
     if (input.chatSessionId !== undefined) {
-      const sessionActive = store.agentRuns.findActiveForChatSession(
-        input.chatSessionId,
-      );
+      const sessionActive = store.agentRuns.findActiveForChatSession(input.chatSessionId);
       if (sessionActive !== null) {
         throw threadAlreadyActiveError(sessionActive);
       }
@@ -851,9 +857,7 @@ export async function createSupervisor(
     let run = store.agentRuns.create({
       threadId: input.threadId,
       status: 'starting',
-      ...(input.chatSessionId !== undefined
-        ? { chatSessionId: input.chatSessionId }
-        : {}),
+      ...(input.chatSessionId !== undefined ? { chatSessionId: input.chatSessionId } : {}),
     });
     const budget = resolveBudget(input.costBudgetUsd);
     const provider = resolveProvider(input.provider);
@@ -900,9 +904,7 @@ export async function createSupervisor(
     // resume here. Issue-style threads (chatSessionId NULL) still use
     // the thread-wide check below.
     if (existing.chatSessionId !== null) {
-      const sessionActive = store.agentRuns.findActiveForChatSession(
-        existing.chatSessionId,
-      );
+      const sessionActive = store.agentRuns.findActiveForChatSession(existing.chatSessionId);
       if (sessionActive !== null && sessionActive.id !== input.runId) {
         throw threadAlreadyActiveError(sessionActive);
       }
@@ -925,7 +927,9 @@ export async function createSupervisor(
       appendSystemPrompt: composed.prompt,
       // Resume always reuses the original provider; non-claude-code can't
       // produce a sessionId today, so this guard is implicit.
-      ...(existing.provider ? { provider: existing.provider as import('@kanbots/dispatcher').AgentRunProvider } : {}),
+      ...(existing.provider
+        ? { provider: existing.provider as import('@kanbots/dispatcher').AgentRunProvider }
+        : {}),
       ...(input.extraArgs !== undefined ? { extraArgs: input.extraArgs } : {}),
       ...(input.env !== undefined ? { env: input.env } : {}),
     });
@@ -949,9 +953,7 @@ export async function createSupervisor(
     // thread (one per session), so scope the conflict check to the
     // session when one is provided — mirrors the startChat path.
     if (input.chatSessionId !== undefined) {
-      const sessionActive = store.agentRuns.findActiveForChatSession(
-        input.chatSessionId,
-      );
+      const sessionActive = store.agentRuns.findActiveForChatSession(input.chatSessionId);
       if (sessionActive !== null) {
         throw threadAlreadyActiveError(sessionActive);
       }
@@ -966,9 +968,7 @@ export async function createSupervisor(
     let run = store.agentRuns.create({
       threadId: input.threadId,
       status: 'starting',
-      ...(input.chatSessionId !== undefined
-        ? { chatSessionId: input.chatSessionId }
-        : {}),
+      ...(input.chatSessionId !== undefined ? { chatSessionId: input.chatSessionId } : {}),
     });
     const branch = defaultBranchName({
       issueNumber: input.issueNumber,
@@ -1102,10 +1102,7 @@ export async function createSupervisor(
         timer = setTimeout(() => resolveTimeout('timeout'), forceResolveAt);
         if (timer && typeof timer.unref === 'function') timer.unref();
       });
-      const outcome = await Promise.race([
-        entry.handle.done.then(() => 'done' as const),
-        guarded,
-      ]);
+      const outcome = await Promise.race([entry.handle.done.then(() => 'done' as const), guarded]);
       if (timer) clearTimeout(timer);
       if (outcome === 'timeout' && active.has(runId)) {
         // Child is unkillable (e.g. <defunct> waiting on a zombie parent).
@@ -1226,7 +1223,16 @@ function persistEvent(store: Store, runId: number, ev: StreamEvent): AgentEvent 
       });
     case 'session':
     case 'decision':
+      return null;
     case 'result':
+      if (ev.isError && ev.text.trim().length > 0) {
+        return store.events.append({
+          agentRunId: runId,
+          type: 'error',
+          payload: { message: ev.text },
+        });
+      }
+      return null;
     case 'rate_limit':
     case 'diff_hunk':
       // diff_hunk events are persisted to the diff_hunks table by the

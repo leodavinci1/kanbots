@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { acpAdapter } from '../src/adapters/acp.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { acpAdapter, setAcpWorkspaceCommand } from '../src/adapters/acp.js';
+import { ampCliAdapter } from '../src/adapters/amp-cli.js';
 import { ccrCliAdapter } from '../src/adapters/ccr-cli.js';
 import { copilotCliAdapter } from '../src/adapters/copilot-cli.js';
 import { cursorCliAdapter } from '../src/adapters/cursor-cli.js';
@@ -126,11 +127,14 @@ describe('droidCliAdapter', () => {
 });
 
 describe('opencodeCliAdapter', () => {
-  it('builds with --auto-approve and run subcommand', () => {
+  it('builds with JSON output and permissive mode under the run subcommand', () => {
     const args = opencodeCliAdapter.buildArgs({});
     expect(args[0]).toBe('run');
-    expect(args).toContain('--output-format=stream-json');
-    expect(args).toContain('--auto-approve');
+    expect(args).toContain('--format');
+    expect(args).toContain('json');
+    expect(args).toContain('--dangerously-skip-permissions');
+    expect(args).not.toContain('--output-format=stream-json');
+    expect(args).not.toContain('--auto-approve');
   });
 
   it('accepts assistant text in both raw-string and delta-shaped forms', () => {
@@ -163,6 +167,38 @@ describe('opencodeCliAdapter', () => {
       }),
     );
     expect(result.map((e) => e.kind)).toEqual(['tool_result']);
+  });
+
+  it('parses stdout error events as failed results', () => {
+    const events = opencodeCliAdapter.parseLine(
+      JSON.stringify({
+        type: 'error',
+        error: {
+          name: 'UnknownError',
+          data: { message: 'Model not found: no/such.' },
+        },
+      }),
+    );
+    expect(events).toEqual([
+      {
+        kind: 'result',
+        isError: true,
+        text: 'Model not found: no/such.',
+        tokenUsage: null,
+        durationMs: null,
+        totalCostUsd: null,
+      },
+    ]);
+  });
+});
+
+describe('default model placeholders', () => {
+  it('does not pass literal `default` as a model id to default-routed CLIs', () => {
+    for (const adapter of [ampCliAdapter, opencodeCliAdapter, ccrCliAdapter, acpAdapter]) {
+      const args = adapter.buildArgs({ model: 'default' });
+      expect(args).not.toContain('--model');
+      expect(args).not.toContain('default');
+    }
   });
 });
 
@@ -280,21 +316,41 @@ describe('copilotCliAdapter + ACP parser', () => {
       }),
     ];
     const events = feed(lines, (l) => copilotCliAdapter.parseLine(l));
-    expect(events.map((e) => e.kind)).toEqual([
-      'text',
-      'tool_use',
-      'tool_result',
-      'result',
-    ]);
+    expect(events.map((e) => e.kind)).toEqual(['text', 'tool_use', 'tool_result', 'result']);
   });
 });
 
 describe('acpAdapter', () => {
+  const originalAcpCommand = process.env.KANBOTS_ACP_COMMAND;
+  const originalAcpArgs = process.env.KANBOTS_ACP_ARGS;
+
+  beforeEach(() => {
+    delete process.env.KANBOTS_ACP_COMMAND;
+    delete process.env.KANBOTS_ACP_ARGS;
+    setAcpWorkspaceCommand(null);
+  });
+
+  afterEach(() => {
+    if (originalAcpCommand === undefined) delete process.env.KANBOTS_ACP_COMMAND;
+    else process.env.KANBOTS_ACP_COMMAND = originalAcpCommand;
+    if (originalAcpArgs === undefined) delete process.env.KANBOTS_ACP_ARGS;
+    else process.env.KANBOTS_ACP_ARGS = originalAcpArgs;
+    setAcpWorkspaceCommand(null);
+  });
+
   it('defaults to the gemini ACP server', () => {
     expect(acpAdapter.command).toBe('gemini');
     const args = acpAdapter.buildArgs({});
     expect(args).toContain('--experimental-acp');
     expect(args).toContain('--yolo');
+  });
+
+  it('prefers the workspace ACP command over the env/default command', () => {
+    process.env.KANBOTS_ACP_COMMAND = 'env-agent --acp';
+    setAcpWorkspaceCommand('workspace-agent --acp --yolo');
+
+    expect(acpAdapter.command).toBe('workspace-agent');
+    expect(acpAdapter.buildArgs({})).toEqual(['--acp', '--yolo']);
   });
 
   it('shares the ACP parser', () => {

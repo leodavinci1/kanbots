@@ -36,6 +36,7 @@ function makeFakeHandle(pid = 1234): FakeHandle {
       const summary: RunSummary = {
         exitCode: opts?.exitCode ?? 0,
         killedByStop: opts?.killedByStop ?? false,
+        stopEscalation: null,
         stderr: '',
         result: null,
       };
@@ -46,16 +47,16 @@ function makeFakeHandle(pid = 1234): FakeHandle {
   return handle as unknown as FakeHandle;
 }
 
-function buildSupervisorWithFakes(store: Store): {
-  supervisor: ReturnType<typeof createSupervisor>;
+async function buildSupervisorWithFakes(store: Store): Promise<{
+  supervisor: Awaited<ReturnType<typeof createSupervisor>>;
   startCalls: StartAgentRunOptions[];
   worktreeCalls: CreateWorktreeInput[];
   handle: FakeHandle;
-} {
+}> {
   const startCalls: StartAgentRunOptions[] = [];
   const worktreeCalls: CreateWorktreeInput[] = [];
   const handle = makeFakeHandle();
-  const supervisor = createSupervisor({
+  const supervisor = await createSupervisor({
     store,
     repoPath: '/tmp/repo',
     prepareWorktreeDir: async () => undefined,
@@ -63,6 +64,12 @@ function buildSupervisorWithFakes(store: Store): {
       worktreeCalls.push(input);
       return { branch: input.branch, path: input.worktreePath, baseRef: null };
     },
+    stampWorktreeIdentity: async () => ({
+      userName: 'test',
+      userEmail: 'test@example.com',
+      hookInstalled: false,
+      hookSkippedReason: 'test stub',
+    }),
     startAgentRun: (opts: StartAgentRunOptions): AgentRunHandle => {
       startCalls.push(opts);
       return handle;
@@ -118,7 +125,6 @@ describe('createSupervisor', () => {
     // awaiting_input is left alone.
     expect(store.agentRuns.findById(waiting.id)?.status).toBe('awaiting_input');
   });
-
 });
 
 describe('supervisor.stop', () => {
@@ -177,7 +183,7 @@ describe('supervisor.start one-run-per-thread guard', () => {
   });
 
   it('rejects a second concurrent start on the same thread with AlreadyActive', async () => {
-    const { supervisor, startCalls, worktreeCalls } = buildSupervisorWithFakes(store);
+    const { supervisor, startCalls, worktreeCalls } = await buildSupervisorWithFakes(store);
 
     const first = await supervisor.start({ threadId, issueNumber: 7, prompt: 'hi' });
     expect(first.status).toBe('running');
@@ -200,7 +206,7 @@ describe('supervisor.start one-run-per-thread guard', () => {
   });
 
   it('rejects a start when the DB has an awaiting_input run on the thread', async () => {
-    const supervisor = createSupervisor({ store, repoPath: '/tmp' });
+    const supervisor = await createSupervisor({ store, repoPath: '/tmp' });
     const ghost = store.agentRuns.create({ threadId });
     store.agentRuns.update(ghost.id, { status: 'awaiting_input' });
 
@@ -216,7 +222,7 @@ describe('supervisor.start one-run-per-thread guard', () => {
   });
 
   it('allows a fresh start once the prior run terminates', async () => {
-    const { supervisor, handle } = buildSupervisorWithFakes(store);
+    const { supervisor, handle } = await buildSupervisorWithFakes(store);
     const first = await supervisor.start({ threadId, issueNumber: 7, prompt: 'a' });
     handle.emitClose({ exitCode: 0 });
     await handle.done;
@@ -224,14 +230,14 @@ describe('supervisor.start one-run-per-thread guard', () => {
     expect(store.agentRuns.findById(first.id)?.status).toBe('complete');
 
     // Replace handle for the second run by building a fresh fake supervisor.
-    const second = buildSupervisorWithFakes(store);
+    const second = await buildSupervisorWithFakes(store);
     const next = await second.supervisor.start({ threadId, issueNumber: 7, prompt: 'b' });
     expect(next.status).toBe('running');
     expect(next.id).not.toBe(first.id);
   });
 
   it('resume rejects when a different active run exists on the same thread', async () => {
-    const { supervisor, handle } = buildSupervisorWithFakes(store);
+    const { supervisor, handle } = await buildSupervisorWithFakes(store);
     const live = await supervisor.start({ threadId, issueNumber: 7, prompt: 'a' });
 
     // Create an inactive prior run that *could* be resumed.

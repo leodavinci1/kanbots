@@ -63,6 +63,17 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = Object.free
   },
 });
 
+const MODEL_PRICING_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  // Codex CLI model slugs move faster than the public pricing family names.
+  // Keep post-normalization run ids billable by mapping them to the closest
+  // priced family entry used for budget enforcement.
+  'gpt-5.5': 'gpt-5',
+  'gpt-5.4': 'gpt-5',
+  'gpt-5.3-codex': 'gpt-5',
+  'gpt-5.2': 'gpt-5',
+  'gpt-5.4-mini': 'gpt-5-mini',
+});
+
 let overrideCache: Record<string, ModelPricing> | null = null;
 let overrideLoaded = false;
 
@@ -103,7 +114,11 @@ function loadOverrides(): Record<string, ModelPricing> {
 
 export function getModelPricing(modelId: string): ModelPricing | null {
   const overrides = loadOverrides();
-  return overrides[modelId] ?? MODEL_PRICING[modelId] ?? null;
+  const direct = overrides[modelId] ?? MODEL_PRICING[modelId];
+  if (direct) return direct;
+  const canonical = MODEL_PRICING_ALIASES[modelId];
+  if (!canonical) return null;
+  return overrides[canonical] ?? MODEL_PRICING[canonical] ?? null;
 }
 
 export interface TokenUsage {
@@ -119,7 +134,10 @@ export interface TokenUsage {
  * null when the model is unknown — callers should leave totalCostUsd null in
  * that case rather than recording $0, which would corrupt rollups.
  */
-export function computeCostUsd(modelId: string | null | undefined, usage: TokenUsage): number | null {
+export function computeCostUsd(
+  modelId: string | null | undefined,
+  usage: TokenUsage,
+): number | null {
   if (!modelId) return null;
   const price = getModelPricing(modelId);
   if (!price) return null;

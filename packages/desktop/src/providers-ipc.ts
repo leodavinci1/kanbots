@@ -9,10 +9,7 @@ import {
 import { openStore, type Store } from '@kanbots/local-store';
 import { CHANNEL_PREFIX } from './ipc/register.js';
 import { toIpcError } from './ipc/errors.js';
-import {
-  hasClaudeCodeCredentials,
-  safeStorageAvailable,
-} from './providers-key.js';
+import { hasClaudeCodeCredentials, safeStorageAvailable } from './providers-key.js';
 
 /**
  * Provider config (Claude Code / Codex CLI defaults + last-validated state)
@@ -26,6 +23,10 @@ import {
 
 let appStore: Store | null = null;
 
+export interface RegisterProvidersIpcOptions {
+  getAcpCommand?: () => string | null | undefined;
+}
+
 function getAppStore(): Store {
   if (appStore !== null) return appStore;
   const path = join(app.getPath('userData'), 'app-store.sqlite');
@@ -33,7 +34,7 @@ function getAppStore(): Store {
   return appStore;
 }
 
-export function registerProvidersIpc(): void {
+export function registerProvidersIpc(opts: RegisterProvidersIpcOptions = {}): void {
   const runtime: ProvidersRuntime = {
     safeStorageAvailable,
     hasClaudeCodeCredentials,
@@ -43,12 +44,11 @@ export function registerProvidersIpc(): void {
       return getAppStore();
     },
     providers: runtime,
+    acpCommand: { get: () => ({ acpCommand: opts.getAcpCommand?.() ?? null }) },
   };
   const handlers: ProvidersHandlers = createProvidersHandlers(deps);
 
-  const channels = Object.keys(handlers) as ReadonlyArray<
-    keyof ProvidersHandlers & string
-  >;
+  const channels = Object.keys(handlers) as ReadonlyArray<keyof ProvidersHandlers & string>;
   for (const channel of channels) {
     const handler = handlers[channel] as (args: unknown) => Promise<unknown>;
     ipcMain.handle(`${CHANNEL_PREFIX}${channel}`, async (_event, args) => {

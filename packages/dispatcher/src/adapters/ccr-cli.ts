@@ -1,4 +1,5 @@
 import { detectRateLimit, parseStreamLine, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
 import type { AgentCliAdapter, BuildArgsInput } from './types.js';
 
 /**
@@ -45,9 +46,7 @@ export const ccrCliAdapter: AgentCliAdapter = {
     if (opts.appendSystemPrompt) {
       args.push('--append-system-prompt', opts.appendSystemPrompt);
     }
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    appendModelArg(args, '--model', opts.model);
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }

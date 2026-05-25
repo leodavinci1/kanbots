@@ -1,12 +1,6 @@
-import {
-  detectRateLimit as detectRateLimitFromText,
-  type StreamEvent,
-} from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { detectRateLimit as detectRateLimitFromText, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 /**
  * Google Gemini CLI adapter. Spawns `gemini` and parses its line-delimited
@@ -95,9 +89,7 @@ export const geminiCliAdapter: AgentCliAdapter = {
     // worktree, so the user is opting into the same "trust the agent inside
     // its sandbox" model the other adapters use.
     const args: string[] = ['--yolo', '--output-format', 'json-stream'];
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    appendModelArg(args, '--model', opts.model);
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }
@@ -203,9 +195,12 @@ function mapEvent(ev: GeminiEvent): StreamEvent[] {
       out.push({
         kind: 'result',
         isError,
-        text: isError && r.error !== undefined
-          ? (typeof r.error === 'string' ? r.error : JSON.stringify(r.error))
-          : '',
+        text:
+          isError && r.error !== undefined
+            ? typeof r.error === 'string'
+              ? r.error
+              : JSON.stringify(r.error)
+            : '',
         tokenUsage: tokenUsageFrom(r.usage),
         durationMs: typeof r.duration_ms === 'number' ? r.duration_ms : null,
         totalCostUsd: typeof r.cost_usd === 'number' ? r.cost_usd : null,

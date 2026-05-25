@@ -1,13 +1,8 @@
 import { parseAcpLine } from './acp-protocol.js';
-import {
-  detectRateLimit as detectRateLimitFromText,
-  type StreamEvent,
-} from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { parseShellLikeCommand } from '../cli-command.js';
+import { detectRateLimit as detectRateLimitFromText, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 /**
  * Generic Agent Client Protocol (ACP) transport adapter.
@@ -63,15 +58,6 @@ export function setAcpWorkspaceCommand(command: string | null): void {
   workspaceAcpCommand = trimmed.length > 0 ? trimmed : null;
 }
 
-function parseShellLikeCommand(
-  raw: string,
-): { command: string; args: readonly string[] } | null {
-  const parts = raw.trim().split(/\s+/).filter((s) => s.length > 0);
-  const head = parts[0];
-  if (head === undefined || head.length === 0) return null;
-  return { command: head, args: parts.slice(1) };
-}
-
 function resolveAcpInvocation(): { command: string; args: readonly string[] } {
   if (workspaceAcpCommand !== null) {
     const parsed = parseShellLikeCommand(workspaceAcpCommand);
@@ -101,9 +87,7 @@ export const acpAdapter: AgentCliAdapter = {
     // forward `--model` blindly — every CLI we know that speaks ACP also
     // accepts a top-level `--model` flag, so this works for Gemini/Cursor/
     // Qwen/Copilot without per-binary special-casing.
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    appendModelArg(args, '--model', opts.model);
     const extraEnv = process.env.KANBOTS_ACP_ARGS?.trim();
     if (extraEnv && extraEnv.length > 0) {
       args.push(...extraEnv.split(/\s+/));

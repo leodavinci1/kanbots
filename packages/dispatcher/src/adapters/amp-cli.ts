@@ -1,9 +1,6 @@
 import { detectRateLimit, parseStreamLine, type StreamEvent } from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 /**
  * Sourcegraph Amp CLI adapter. Spawns `amp` and parses its stream-JSON
@@ -35,9 +32,7 @@ export const ampCliAdapter: AgentCliAdapter = {
 
   buildArgs(opts: BuildArgsInput): string[] {
     const args: string[] = ['--execute', '--stream-json', '--dangerously-allow-all'];
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    appendModelArg(args, '--model', opts.model);
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }

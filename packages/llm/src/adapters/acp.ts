@@ -1,13 +1,16 @@
 import {
+  parseShellLikeCommand,
   startAgentRun as defaultStartAgentRun,
   type AgentRunHandle,
   type StartAgentRunOptions,
 } from '@kanbots/dispatcher';
+import { validateCliExecutable } from '../cli-validation.js';
 import type {
   ChatRequest,
   ChatResponse,
   ProviderAdapter,
   ProviderCredentials,
+  ProviderValidationContext,
   ValidateResult,
 } from '../types.js';
 
@@ -37,8 +40,16 @@ export const acpAdapter: ProviderAdapter = {
     agentRuns: true,
   },
 
-  async validate(_creds: ProviderCredentials): Promise<ValidateResult> {
-    return { ok: true };
+  async validate(
+    _creds: ProviderCredentials,
+    context?: ProviderValidationContext,
+  ): Promise<ValidateResult> {
+    const raw = resolveAcpValidationCommand(context);
+    const parsed = parseShellLikeCommand(raw);
+    if (parsed === null) {
+      return { ok: false, error: 'ACP command is empty.' };
+    }
+    return validateCliExecutable('ACP agent CLI', parsed.command);
   },
 
   async chat(_req: ChatRequest, _creds: ProviderCredentials): Promise<ChatResponse> {
@@ -51,3 +62,13 @@ export const acpAdapter: ProviderAdapter = {
     return defaultStartAgentRun({ ...opts, provider: 'acp' });
   },
 };
+
+function resolveAcpValidationCommand(context?: ProviderValidationContext): string {
+  const workspaceCommand = context?.acpCommand?.trim();
+  if (workspaceCommand && workspaceCommand.length > 0) return workspaceCommand;
+
+  const envCommand = process.env.KANBOTS_ACP_COMMAND?.trim();
+  if (envCommand && envCommand.length > 0) return envCommand;
+
+  return 'gemini';
+}

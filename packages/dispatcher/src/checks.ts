@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
+import { createCliEnvironment } from './cli-env.js';
 
 export type CheckKind = 'typecheck' | 'tests' | 'lint' | 'e2e';
 export type CheckStatus = 'idle' | 'running' | 'pass' | 'fail';
@@ -20,7 +21,11 @@ export interface RunCheckOptions {
   cwd: string;
   command: CheckCommand;
   timeoutMs?: number;
-  spawn?: (command: string, args: readonly string[], options: { cwd: string }) => ChildProcess;
+  spawn?: (
+    command: string,
+    args: readonly string[],
+    options: { cwd: string; env?: NodeJS.ProcessEnv },
+  ) => ChildProcess;
 }
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
@@ -56,7 +61,10 @@ export async function runCheck(opts: RunCheckOptions): Promise<CheckResult> {
   const spawn = opts.spawn ?? nodeSpawn;
   const start = Date.now();
   return await new Promise<CheckResult>((resolve) => {
-    const child = spawn(opts.command.command, opts.command.args, { cwd: opts.cwd });
+    const child = spawn(opts.command.command, opts.command.args, {
+      cwd: opts.cwd,
+      env: createCliEnvironment(),
+    });
     let stdout = '';
     let stderr = '';
     let killed = false;

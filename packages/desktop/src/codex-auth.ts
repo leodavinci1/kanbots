@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { createCliEnvironment } from '@kanbots/dispatcher';
 import { shell } from 'electron';
 
 // codex writes auth state to ~/.codex/auth.json after `codex login` succeeds;
@@ -37,6 +38,7 @@ export async function isCodexAuthenticated(): Promise<boolean> {
     let child: ChildProcess;
     try {
       child = spawn('codex', ['login', 'status'], {
+        env: createCliEnvironment(),
         stdio: ['ignore', 'ignore', 'ignore'],
       });
     } catch {
@@ -65,6 +67,7 @@ export async function startCodexLogin(): Promise<CodexLoginResult | CodexLoginEr
     let child: ChildProcess;
     try {
       child = spawn('codex', ['login'], {
+        env: createCliEnvironment(),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (err) {
@@ -134,7 +137,8 @@ export async function startCodexLogin(): Promise<CodexLoginResult | CodexLoginEr
         settle({ ok: true });
       } else {
         const stderr = entry.stderrBuf.trim();
-        const detail = stderr.length > 0 ? stderr : `codex login exited with code ${code ?? 'null'}`;
+        const detail =
+          stderr.length > 0 ? stderr : `codex login exited with code ${code ?? 'null'}`;
         settle({ ok: false, error: detail });
       }
     });

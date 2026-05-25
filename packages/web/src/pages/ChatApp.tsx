@@ -1,17 +1,13 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../api.js';
+import { SessionDropdown, useActiveSessionId } from '../components/chat/SessionDropdown.js';
 import {
-  SessionDropdown,
-  useActiveSessionId,
-} from '../components/chat/SessionDropdown.js';
-import { ModelPicker } from '../components/forms/ModelPicker.js';
+  MODEL_OPTIONS,
+  PROVIDER_LABELS,
+  isAgentRunProvider,
+  modelLabel,
+} from '../components/forms/ModelPicker.js';
+import { useFetch } from '../hooks/useFetch.js';
 import { useAgentRunStream } from '../hooks/useAgentRunStream.js';
 import { ageString } from '../labels.js';
 import { ToolUseCard } from '../components/run/ToolUseCard.js';
@@ -25,6 +21,7 @@ import type {
   ChatSessionPayload,
   DecisionPayload,
   Message,
+  ProviderId,
 } from '../types.js';
 
 const STATUS_LABEL: Record<AgentRunStatus, string> = {
@@ -104,13 +101,7 @@ export function ChatApp() {
   );
 }
 
-function ChatBootstrap({
-  loading,
-  error,
-}: {
-  loading: boolean;
-  error: string | null;
-}) {
+function ChatBootstrap({ loading, error }: { loading: boolean; error: string | null }) {
   return (
     <div className="kb-chat-bootstrap">
       {error ? (
@@ -179,9 +170,7 @@ function ChatRoom({ conversationId }: { conversationId: number }) {
   // lose history.
   const sessionMessages = useMemo<Message[]>(() => {
     if (activeSessionId === null) return messages;
-    return messages.filter(
-      (m) => m.chatSessionId === activeSessionId || m.chatSessionId === null,
-    );
+    return messages.filter((m) => m.chatSessionId === activeSessionId || m.chatSessionId === null);
   }, [messages, activeSessionId]);
 
   // The events stream is per-run, but we want the session's run, not the
@@ -202,7 +191,7 @@ function ChatRoom({ conversationId }: { conversationId: number }) {
   }, [latestRun, activeRun, activeSessionId]);
 
   const displayRun = sessionActiveRun ?? sessionLatestRun;
-  const stream = useAgentRunStream(displayRun?.id ?? null, streamGen);
+  const stream = useAgentRunStream(displayRun?.id ?? null, streamGen, 'chat');
 
   // When the active run finishes (status flips to a terminal state) the
   // server-side row updates but our cached `activeRun` doesn't. Refetch
@@ -341,6 +330,8 @@ function ChatRoom({ conversationId }: { conversationId: number }) {
 
   const status = stream.status ?? displayRun?.status ?? null;
   const statusClass = status ? `kb-chat-status s-${status}` : 'kb-chat-status';
+  const runFailure = status === 'failed' ? (displayRun?.exitReason ?? null) : null;
+  const roomError = error ?? stream.error ?? runFailure;
 
   return (
     <div className="kb-chat-room">
@@ -390,7 +381,12 @@ function ChatRoom({ conversationId }: { conversationId: number }) {
         ) : null}
         {items.map((it) =>
           it.kind === 'message' ? (
-            <MessageRow key={it.id} message={it.message} cards={it.cards} onResolved={() => void refresh()} />
+            <MessageRow
+              key={it.id}
+              message={it.message}
+              cards={it.cards}
+              onResolved={() => void refresh()}
+            />
           ) : it.event.type === 'tool_use' ? (
             <div key={it.id} className="kb-chat-toolwrap">
               <span className="kb-chat-toolwrap-rail" aria-hidden />
@@ -422,15 +418,14 @@ function ChatRoom({ conversationId }: { conversationId: number }) {
         onSessionsChange={setSessions}
         onActiveSessionChange={setActiveSessionId}
         disabled={
-          sessionActiveRun !== null &&
-          (stream.status === 'running' || stream.status === 'starting')
+          sessionActiveRun !== null && (stream.status === 'running' || stream.status === 'starting')
         }
         onSent={() => {
           setStreamGen((g) => g + 1);
           void refresh();
         }}
       />
-      {error ? <div className="kb-chat-error">{error}</div> : null}
+      {roomError ? <div className="kb-chat-error">{roomError}</div> : null}
     </div>
   );
 }
@@ -510,7 +505,16 @@ function ChatTitleEditor({
     >
       {conversation.title}
       <span className="kb-chat-title-pencil" aria-hidden>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
         </svg>
@@ -537,12 +541,40 @@ function ReplyFooter({
   onSent: () => void;
 }) {
   const [body, setBody] = useState('');
-  const [modelSelection, setModelSelection] =
-    useState<import('../components/forms/ModelPicker.js').ModelPickerValue | null>(null);
+  const [providerOverride, setProviderOverride] = useState<ProviderId | null>(null);
+  const [modelOverride, setModelOverride] = useState<string | null>(null);
   const [appendSystemPrompt, setAppendSystemPrompt] = useState<string>('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: providers } = useFetch('providers', () => api.getProviders());
+
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId) ?? sessions[0] ?? null,
+    [sessions, activeSessionId],
+  );
+  const enabledAgentProviders = useMemo(
+    () =>
+      providers?.providers.filter(
+        (provider) => provider.enabled && provider.hasKey && isAgentRunProvider(provider.id),
+      ) ?? [],
+    [providers],
+  );
+  const effectiveProvider =
+    providerOverride ?? activeSession?.agentProvider ?? enabledAgentProviders[0]?.id ?? null;
+  const modelOptions = effectiveProvider !== null ? (MODEL_OPTIONS[effectiveProvider] ?? []) : [];
+  const selectableModelOptions = modelOptions.filter((model) => model.id !== 'default');
+
+  useEffect(() => {
+    setProviderOverride(null);
+    setModelOverride(null);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (modelOverride !== null && !modelOptions.some((option) => option.id === modelOverride)) {
+      setModelOverride(null);
+    }
+  }, [modelOptions, modelOverride]);
 
   async function send(): Promise<void> {
     const trimmed = body.trim();
@@ -551,9 +583,11 @@ function ReplyFooter({
     setError(null);
     try {
       const opts: Parameters<typeof api.postChatMessage>[2] = {};
-      if (modelSelection) {
-        opts.model = modelSelection.model;
-        opts.provider = modelSelection.provider;
+      if (providerOverride !== null) {
+        opts.provider = providerOverride;
+        opts.model = modelOverride ?? 'default';
+      } else if (modelOverride !== null) {
+        opts.model = modelOverride;
       }
       if (appendSystemPrompt.trim().length > 0) {
         opts.appendSystemPrompt = appendSystemPrompt.trim();
@@ -605,15 +639,51 @@ function ReplyFooter({
         />
       </div>
       {showAdvanced ? (
-        <div className="kb-chat-foot-advanced">
+        <div className="kb-chat-foot-advanced" style={{ flexWrap: 'wrap' }}>
+          <label className="kb-chat-foot-field">
+            <span className="kb-chat-foot-field-label">Provider override</span>
+            <select
+              value={providerOverride ?? ''}
+              onChange={(e) => {
+                const next = e.target.value as ProviderId | '';
+                setProviderOverride(next === '' ? null : next);
+                setModelOverride(null);
+              }}
+              className="kb-chat-model-picker"
+            >
+              <option value="">
+                {activeSession
+                  ? `Session agent (${PROVIDER_LABELS[activeSession.agentProvider]})`
+                  : 'Session agent'}
+              </option>
+              {enabledAgentProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {PROVIDER_LABELS[provider.id]}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="kb-chat-foot-field">
             <span className="kb-chat-foot-field-label">Model override</span>
-            <ModelPicker
-              value={modelSelection}
-              onChange={setModelSelection}
-              agentRunsOnly
+            <select
+              value={modelOverride ?? ''}
+              onChange={(e) => setModelOverride(e.target.value || null)}
+              disabled={effectiveProvider === null || selectableModelOptions.length === 0}
               className="kb-chat-model-picker"
-            />
+            >
+              <option value="">
+                {providerOverride !== null
+                  ? 'Provider default'
+                  : activeSession?.agentModel
+                    ? `Session model (${modelLabel(activeSession.agentProvider, activeSession.agentModel)})`
+                    : 'Default model'}
+              </option>
+              {selectableModelOptions.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="kb-chat-foot-field kb-chat-foot-field-grow">
             <span className="kb-chat-foot-field-label">Append system prompt</span>
@@ -630,9 +700,7 @@ function ReplyFooter({
       <div className="kb-chat-foot-row">
         <textarea
           className="kb-chat-foot-input"
-          placeholder={
-            disabled ? 'agent is running…' : 'Ask the agent…'
-          }
+          placeholder={disabled ? 'agent is running…' : 'Ask the agent…'}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKey}
@@ -680,11 +748,7 @@ function MessageRow({
         — {message.body} · {ageString(message.createdAt)} ago —
         {cards.map((c) =>
           c.type === 'decision' ? (
-            <DecisionInline
-              key={c.id}
-              card={c as Card<DecisionPayload>}
-              onResolved={onResolved}
-            />
+            <DecisionInline key={c.id} card={c as Card<DecisionPayload>} onResolved={onResolved} />
           ) : null,
         )}
       </div>
@@ -701,11 +765,7 @@ function MessageRow({
       <div className="kb-chat-msg-body">{message.body}</div>
       {cards.map((c) =>
         c.type === 'decision' ? (
-          <DecisionInline
-            key={c.id}
-            card={c as Card<DecisionPayload>}
-            onResolved={onResolved}
-          />
+          <DecisionInline key={c.id} card={c as Card<DecisionPayload>} onResolved={onResolved} />
         ) : null,
       )}
     </div>
@@ -752,7 +812,12 @@ function DecisionInline({
   }
 
   return (
-    <div className="kb-decision" role="region" aria-label="Agent question" style={{ marginTop: 10 }}>
+    <div
+      className="kb-decision"
+      role="region"
+      aria-label="Agent question"
+      style={{ marginTop: 10 }}
+    >
       <div className="kb-decision-opts">
         {card.payload.options.map((opt, i) => (
           <button
@@ -804,7 +869,9 @@ function EventRow({ event }: { event: AgentEvent }) {
     return (
       <div className="kb-tcall" style={{ borderColor: 'var(--failed)' }}>
         <div className="kb-tcall-head">
-          <span className="name" style={{ color: 'var(--failed)' }}>error</span>
+          <span className="name" style={{ color: 'var(--failed)' }}>
+            error
+          </span>
           <span className="arg">{p.message ?? 'unknown'}</span>
           <span className="dur">{ageString(event.createdAt)} ago</span>
         </div>

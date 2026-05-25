@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { createCliEnvironment } from './cli-env.js';
 
 export type SuggesterProvider =
   | 'claude-code'
@@ -101,9 +102,7 @@ export interface DraftPrDescriptionInput {
   diffTruncated?: boolean;
 }
 
-export type DraftPrDescriptionFn = (
-  input: DraftPrDescriptionInput,
-) => Promise<DraftedIssue>;
+export type DraftPrDescriptionFn = (input: DraftPrDescriptionInput) => Promise<DraftedIssue>;
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 // Ideation does Glob/Grep/Read across the repo and a verify pass before
@@ -220,7 +219,7 @@ async function runClaudeForDraftedIssue(opts: RunClaudeOptions): Promise<Drafted
     'Read,Glob,Grep',
   ];
 
-  const child = opts.spawn(opts.command, args, { cwd: opts.cwd });
+  const child = opts.spawn(opts.command, args, { cwd: opts.cwd, env: createCliEnvironment() });
   let stdout = '';
   let stderr = '';
   let killedByTimeout = false;
@@ -411,9 +410,7 @@ export function createPrDescriptionDrafter(
   const systemPrompt = opts.systemPrompt ?? DEFAULT_PR_DESCRIPTION_SYSTEM_PROMPT;
   const spawn = opts.spawn ?? nodeSpawn;
 
-  return async function draftPrDescription(
-    input: DraftPrDescriptionInput,
-  ): Promise<DraftedIssue> {
+  return async function draftPrDescription(input: DraftPrDescriptionInput): Promise<DraftedIssue> {
     const truncatedNote = input.diffTruncated
       ? '\n\nNote: the diff below was truncated to keep the prompt within token limits. Summarize what you can see and hedge accordingly.'
       : '';
@@ -486,7 +483,10 @@ const STATUS_GROUP_ORDER: ReadonlyArray<{
   { status: 'in-review', heading: 'In review (do not duplicate)' },
   { status: 'todo', heading: 'Up next / todo (do not duplicate)' },
   { status: 'backlog', heading: 'Backlog (do not duplicate)' },
-  { status: 'done', heading: 'Done — already shipped or finished (do not propose anything similar)' },
+  {
+    status: 'done',
+    heading: 'Done — already shipped or finished (do not propose anything similar)',
+  },
   { status: 'closed', heading: 'Recently closed (do not propose anything similar)' },
   { status: 'unlabeled', heading: 'Other open issues (do not duplicate)' },
 ];
@@ -582,7 +582,7 @@ async function spawnCodex(opts: RunCodexOptions, schemaPath: string): Promise<Dr
     `${opts.systemPrompt}${CODEX_PROMPT_DELIMITER}${opts.userPrompt}`,
   ];
 
-  const child = opts.spawn(opts.command, args, { cwd: opts.cwd });
+  const child = opts.spawn(opts.command, args, { cwd: opts.cwd, env: createCliEnvironment() });
   let stderr = '';
   let killedByTimeout = false;
   let agentMessageText: string | null = null;
@@ -671,7 +671,9 @@ async function spawnCodex(opts: RunCodexOptions, schemaPath: string): Promise<Dr
   }
   if (exitCode !== 0) {
     throw new ComposerError(
-      turnError ? `codex exited with code ${exitCode}: ${turnError}` : `codex exited with code ${exitCode}`,
+      turnError
+        ? `codex exited with code ${exitCode}: ${turnError}`
+        : `codex exited with code ${exitCode}`,
       stderr,
     );
   }

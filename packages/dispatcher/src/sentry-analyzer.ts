@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { z } from 'zod';
+import { createCliEnvironment } from './cli-env.js';
 import { ComposerError, type SpawnFn } from './composer.js';
 
 export interface SentryAnalyzerStackFrame {
@@ -93,7 +94,9 @@ export function createSentryAnalyzer(opts: CreateSentryAnalyzerOptions): SentryA
   const systemPrompt = opts.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   const spawn = opts.spawn ?? nodeSpawn;
 
-  return async function analyzeSentryError(input: SentryAnalyzerInput): Promise<SentryAnalyzerSuggestion> {
+  return async function analyzeSentryError(
+    input: SentryAnalyzerInput,
+  ): Promise<SentryAnalyzerSuggestion> {
     const stdin = formatSentryPrompt(input);
     return runClaudeForSentrySuggestion({ command, cwd, timeoutMs, systemPrompt, stdin, spawn });
   };
@@ -129,7 +132,9 @@ const claudeResultSchema = z
   })
   .passthrough();
 
-async function runClaudeForSentrySuggestion(opts: RunClaudeOptions): Promise<SentryAnalyzerSuggestion> {
+async function runClaudeForSentrySuggestion(
+  opts: RunClaudeOptions,
+): Promise<SentryAnalyzerSuggestion> {
   const args = [
     '-p',
     '--output-format',
@@ -143,7 +148,7 @@ async function runClaudeForSentrySuggestion(opts: RunClaudeOptions): Promise<Sen
     'Read,Glob,Grep',
   ];
 
-  const child = opts.spawn(opts.command, args, { cwd: opts.cwd });
+  const child = opts.spawn(opts.command, args, { cwd: opts.cwd, env: createCliEnvironment() });
   let stdout = '';
   let stderr = '';
   let killedByTimeout = false;

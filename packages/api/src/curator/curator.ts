@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
+import { createCliEnvironment } from '@kanbots/dispatcher';
 import { z } from 'zod';
 import type { AgentRun, LearningTag, Store } from '@kanbots/local-store';
 import { CURATOR_JSON_SCHEMA, CURATOR_SYSTEM_PROMPT, renderCuratorPrompt } from './prompt.js';
@@ -15,7 +16,7 @@ const DEFAULT_PER_RUN_BUDGET_USD = 0.05;
 
 /** Default daily cap per repo. Curator runs after every successful agent
  *  run; on a busy day this caps total memory-ledger spend. */
-const DEFAULT_DAILY_BUDGET_USD = 1.00;
+const DEFAULT_DAILY_BUDGET_USD = 1.0;
 
 /** How long the curator child process is allowed to run before we kill it.
  *  Curator does not invoke tools (no Read/Grep) so 60s is generous. */
@@ -79,7 +80,10 @@ export type CuratorOutcome =
   | { kind: 'completed'; appliedCount: number; costUsd: number };
 
 export class CuratorError extends Error {
-  constructor(message: string, public readonly stderr = '') {
+  constructor(
+    message: string,
+    public readonly stderr = '',
+  ) {
     super(message);
     this.name = 'CuratorError';
   }
@@ -156,11 +160,7 @@ export function createCurator(opts: CreateCuratorOptions): (run: AgentRun) => Pr
     // Cost attribution happens regardless of whether entries were applied —
     // the spawn already happened.
     if (output.costUsd > 0) {
-      store.learnings.attributeCuratorSpend(
-        thread.repoOwner,
-        thread.repoName,
-        output.costUsd,
-      );
+      store.learnings.attributeCuratorSpend(thread.repoOwner, thread.repoName, output.costUsd);
     }
     if (output.costUsd > perRunBudget) {
       // Log but don't abort — the dispatch already completed.
@@ -220,7 +220,7 @@ async function runClaudeJsonSchema(opts: RunClaudeOpts): Promise<RunClaudeOutput
     '--json-schema',
     JSON.stringify(CURATOR_JSON_SCHEMA),
   ];
-  const child = opts.spawn(opts.command, args, { cwd: opts.cwd });
+  const child = opts.spawn(opts.command, args, { cwd: opts.cwd, env: createCliEnvironment() });
   let stdout = '';
   let stderr = '';
   let killedByTimeout = false;
@@ -275,7 +275,10 @@ async function runClaudeJsonSchema(opts: RunClaudeOpts): Promise<RunClaudeOutput
   }
   const entries = curatorOutputSchema.safeParse(result.data.structured_output);
   if (!entries.success) {
-    throw new CuratorError(`curator JSON failed schema validation: ${entries.error.message}`, stderr);
+    throw new CuratorError(
+      `curator JSON failed schema validation: ${entries.error.message}`,
+      stderr,
+    );
   }
   return {
     costUsd: result.data.total_cost_usd ?? 0,

@@ -18,7 +18,9 @@ export interface ComposePromptInput {
 export interface AgentCliAdapter {
   command: string;
   promptDelivery: PromptDelivery;
+  normalizeModel?(model: string | undefined): string | undefined;
   buildArgs(opts: BuildArgsInput): string[];
+  prepareEnvironment?(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
   parseLine(line: string): StreamEvent[];
   detectRateLimit?(stderrChunk: string): Extract<StreamEvent, { kind: 'rate_limit' }> | null;
   /**

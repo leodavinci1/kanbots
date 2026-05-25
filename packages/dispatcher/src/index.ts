@@ -102,3 +102,6 @@ export {
   type PreviewProxyHandle,
   type StartPreviewProxyOptions,
 } from './preview-proxy.js';
+
+export { createCliEnvironment, mergePathValues, resolveCommandOnPath } from './cli-env.js';
+export { parseShellLikeCommand, type ParsedCommand } from './cli-command.js';

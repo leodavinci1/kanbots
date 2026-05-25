@@ -1,13 +1,7 @@
 import { parseAcpLine } from './acp-protocol.js';
-import {
-  detectRateLimit as detectRateLimitFromText,
-  type StreamEvent,
-} from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { detectRateLimit as detectRateLimitFromText, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 /**
  * GitHub Copilot CLI adapter. Spawns the official Copilot CLI (via
@@ -47,9 +41,7 @@ export const copilotCliAdapter: AgentCliAdapter = {
     // Pinning a specific package keeps the experience stable across
     // npm registry updates; users can override via extraArgs.
     const args: string[] = ['-y', '@github/copilot', '--acp', '--allow-all-tools'];
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    appendModelArg(args, '--model', opts.model);
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }

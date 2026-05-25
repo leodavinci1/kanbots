@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { delimiter } from 'node:path';
 import { startAgentRun } from '../src/worker.js';
 import type { StreamEvent } from '../src/stream-parser.js';
 import { makeFakeSpawn } from './helpers/fake-spawn.js';
@@ -56,6 +57,58 @@ describe('startAgentRun', () => {
     expect(call.args).toContain('bypassPermissions');
     expect(call.args).not.toContain('--no-session-persistence');
     expect(call.stdin).toBe('do the thing');
+  });
+
+  it('passes an explicit child env with CLI PATH entries', async () => {
+    const fake = makeFakeSpawn({ stdout: RESULT + '\n' });
+    const handle = startAgentRun({
+      cwd: '/wt',
+      prompt: 'do the thing',
+      env: { PATH: '/custom/bin', KANBOTS_TEST_ENV: '1' },
+      spawn: fake.fn,
+    });
+    await handle.done;
+
+    const env = fake.calls[0]!.env!;
+    const pathValue = env.PATH ?? env.Path ?? '';
+    expect(pathValue.split(delimiter)).toContain('/custom/bin');
+    expect(env.KANBOTS_TEST_ENV).toBe('1');
+  });
+
+  it('removes API-key auth env from Claude Code subscription runs', async () => {
+    const fake = makeFakeSpawn({ stdout: RESULT + '\n' });
+    const handle = startAgentRun({
+      cwd: '/wt',
+      prompt: 'do the thing',
+      env: {
+        ANTHROPIC_API_KEY: 'sk-ant-test',
+        ANTHROPIC_BASE_URL: 'https://api.example.test',
+        CLAUDE_CODE_SIMPLE: '1',
+        OPENAI_API_KEY: 'sk-openai-test',
+      },
+      spawn: fake.fn,
+    });
+    await handle.done;
+
+    const env = fake.calls[0]!.env!;
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env.CLAUDE_CODE_SIMPLE).toBeUndefined();
+    expect(env.OPENAI_API_KEY).toBe('sk-openai-test');
+  });
+
+  it('keeps API-key auth env for router providers', async () => {
+    const fake = makeFakeSpawn({ stdout: RESULT + '\n' });
+    const handle = startAgentRun({
+      cwd: '/wt',
+      prompt: 'do the thing',
+      provider: 'ccr-cli',
+      env: { ANTHROPIC_API_KEY: 'sk-ant-test' },
+      spawn: fake.fn,
+    });
+    await handle.done;
+
+    expect(fake.calls[0]!.env!.ANTHROPIC_API_KEY).toBe('sk-ant-test');
   });
 
   it('passes --resume when resumeFromSessionId is provided', async () => {
@@ -150,6 +203,55 @@ describe('startAgentRun', () => {
     expect(args[args.indexOf('--append-system-prompt') + 1]).toBe('EXTRA');
     expect(args).toContain('--tools');
     expect(args[args.indexOf('--tools') + 1]).toBe('Read,Bash');
+  });
+
+  it('lets Codex CLI use its configured model when model is default', async () => {
+    const fake = makeFakeSpawn();
+    const handle = startAgentRun({
+      cwd: '/wt',
+      prompt: 'write tests',
+      provider: 'codex-cli',
+      model: 'default',
+      spawn: fake.fn,
+    });
+    await handle.done;
+
+    const args = fake.calls[0]!.args;
+    expect(fake.calls[0]!.command).toBe('codex');
+    expect(args).not.toContain('-m');
+    expect(args).not.toContain('default');
+  });
+
+  it('passes explicit Codex CLI model ids', async () => {
+    const fake = makeFakeSpawn();
+    const handle = startAgentRun({
+      cwd: '/wt',
+      prompt: 'write tests',
+      provider: 'codex-cli',
+      model: 'gpt-5.5',
+      spawn: fake.fn,
+    });
+    await handle.done;
+
+    const args = fake.calls[0]!.args;
+    expect(args).toContain('-m');
+    expect(args[args.indexOf('-m') + 1]).toBe('gpt-5.5');
+  });
+
+  it('maps legacy Codex CLI model ids to installed CLI catalogue ids', async () => {
+    const fake = makeFakeSpawn();
+    const handle = startAgentRun({
+      cwd: '/wt',
+      prompt: 'write tests',
+      provider: 'codex-cli',
+      model: 'gpt-5',
+      spawn: fake.fn,
+    });
+    await handle.done;
+
+    const args = fake.calls[0]!.args;
+    expect(args).toContain('-m');
+    expect(args[args.indexOf('-m') + 1]).toBe('gpt-5.5');
   });
 
   it('handles chunked stdout split mid-line', async () => {

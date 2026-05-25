@@ -1,23 +1,17 @@
-import {
-  detectRateLimit as detectRateLimitFromText,
-  type StreamEvent,
-} from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { detectRateLimit as detectRateLimitFromText, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 /**
  * SST OpenCode CLI adapter. Spawns `opencode` and parses its
- * line-delimited stream-json output.
+ * line-delimited JSON output.
  *
  * Auth: opencode finds its own credentials. The CLI's own login flow
  * configures providers under `~/.local/share/opencode/`. The app does not
  * store or inject opencode credentials.
  *
- * `--auto-approve` is the permissive flag and is on by default — parity
- * with claude's `--permission-mode bypassPermissions` and codex's
+ * `--dangerously-skip-permissions` is the permissive flag and is on by
+ * default — parity with claude's `--permission-mode bypassPermissions` and codex's
  * `--dangerously-bypass-approvals-and-sandbox`. The dispatcher already
  * isolates each run in a worktree, so this is the same trust envelope.
  *
@@ -71,12 +65,18 @@ interface OpencodeResultEvent {
   error?: unknown;
 }
 
+interface OpencodeErrorEvent {
+  type: 'error';
+  error?: unknown;
+}
+
 type OpencodeEvent =
   | OpencodeSessionEvent
   | OpencodeAssistantEvent
   | OpencodeToolUseEvent
   | OpencodeToolResultEvent
   | OpencodeResultEvent
+  | OpencodeErrorEvent
   | { type: string };
 
 const SYSTEM_PROMPT_DELIMITER = '\n\n---\n\n';
@@ -86,15 +86,13 @@ export const opencodeCliAdapter: AgentCliAdapter = {
   promptDelivery: 'stdin',
 
   buildArgs(opts: BuildArgsInput): string[] {
-    // `run` is the non-interactive subcommand. --output-format=stream-json
-    // is the structured event channel; --auto-approve skips per-tool
-    // prompts so the agent runs unattended inside its sandbox. The
+    // `run` is the non-interactive subcommand. --format json is the
+    // structured event channel; --dangerously-skip-permissions skips
+    // per-tool prompts so the agent runs unattended inside its sandbox. The
     // dispatcher's worktree isolation gives the same trust envelope as
     // claude's bypass mode.
-    const args: string[] = ['run', '--output-format=stream-json', '--auto-approve'];
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    const args: string[] = ['run', '--format', 'json', '--dangerously-skip-permissions'];
+    appendModelArg(args, '--model', opts.model);
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }
@@ -171,7 +169,8 @@ function mapEvent(ev: OpencodeEvent): StreamEvent[] {
     case 'tool_call': {
       const tu = ev as OpencodeToolUseEvent;
       const id = typeof tu.id === 'string' ? tu.id : null;
-      const name = typeof tu.name === 'string' ? tu.name : typeof tu.tool === 'string' ? tu.tool : null;
+      const name =
+        typeof tu.name === 'string' ? tu.name : typeof tu.tool === 'string' ? tu.tool : null;
       if (id === null || name === null) return [];
       return [
         {
@@ -221,8 +220,41 @@ function mapEvent(ev: OpencodeEvent): StreamEvent[] {
       });
       return out;
     }
+    case 'error': {
+      const message = extractErrorMessage((ev as OpencodeErrorEvent).error);
+      const out: StreamEvent[] = [];
+      const rl = detectRateLimitFromText(message);
+      if (rl) out.push(rl);
+      out.push({
+        kind: 'result',
+        isError: true,
+        text: message,
+        tokenUsage: null,
+        durationMs: null,
+        totalCostUsd: null,
+      });
+      return out;
+    }
     default:
       return [];
+  }
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === 'object') {
+      const message = (data as { message?: unknown }).message;
+      if (typeof message === 'string' && message.length > 0) return message;
+    }
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.length > 0) return message;
+  }
+  try {
+    return JSON.stringify(error) ?? 'unknown opencode error';
+  } catch {
+    return String(error);
   }
 }
 

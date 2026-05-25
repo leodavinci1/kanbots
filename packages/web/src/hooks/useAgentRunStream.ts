@@ -9,6 +9,8 @@ export interface AgentRunStreamState {
   error: string | null;
 }
 
+export type AgentRunStreamScope = 'workspace' | 'chat';
+
 const EMPTY_STATE: AgentRunStreamState = {
   events: [],
   cards: [],
@@ -27,6 +29,7 @@ const EMPTY_STATE: AgentRunStreamState = {
 export function useAgentRunStream(
   runId: number | null,
   resubscribeKey: number = 0,
+  scope: AgentRunStreamScope = 'workspace',
 ): AgentRunStreamState {
   const [state, setState] = useState<AgentRunStreamState>(EMPTY_STATE);
 
@@ -52,7 +55,7 @@ export function useAgentRunStream(
     let unsubscribeBridge: (() => void) | null = null;
 
     bridge
-      .invoke('agent-runs:events:subscribe', { runId })
+      .invoke('agent-runs:events:subscribe', { runId, scope })
       .then(({ subscriptionId: subId, runStatus }) => {
         if (cancelled) {
           void bridge.invoke('agent-runs:events:unsubscribe', { subscriptionId: subId });
@@ -103,7 +106,7 @@ export function useAgentRunStream(
         void bridge.invoke('agent-runs:events:unsubscribe', { subscriptionId });
       }
     };
-  }, [runId, resubscribeKey]);
+  }, [runId, resubscribeKey, scope]);
 
   return state;
 }

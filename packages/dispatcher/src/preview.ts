@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 
+import { createCliEnvironment } from './cli-env.js';
 import { startPreviewProxy, type PreviewProxyHandle } from './preview-proxy.js';
 
 export type PreviewState = 'idle' | 'booting' | 'live' | 'crashed' | 'stopped';
@@ -94,11 +95,10 @@ const PORT_RE = /(?:https?:\/\/[^\s]*?:|listening on(?:[^\d]+))(\d{2,5})/i;
 export async function startPreview(opts: StartPreviewOptions): Promise<PreviewHandle> {
   const spawn = opts.spawn ?? nodeSpawn;
   const port = await pickPort(opts.preferredPort ?? DEFAULT_PORT);
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
+  const env: NodeJS.ProcessEnv = createCliEnvironment({
     PORT: String(port),
     NODE_ENV: 'development',
-  };
+  });
   const child = opts.startCommandLine
     ? spawn(opts.startCommandLine, [], { cwd: opts.cwd, env, shell: true } as PreviewSpawnOptions)
     : (() => {

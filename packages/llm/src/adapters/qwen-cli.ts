@@ -3,6 +3,7 @@ import {
   type AgentRunHandle,
   type StartAgentRunOptions,
 } from '@kanbots/dispatcher';
+import { validateCliExecutable } from '../cli-validation.js';
 import type {
   ChatRequest,
   ChatResponse,
@@ -33,7 +34,7 @@ export const qwenCliAdapter: ProviderAdapter = {
   },
 
   async validate(_creds: ProviderCredentials): Promise<ValidateResult> {
-    return { ok: true };
+    return validateCliExecutable('Qwen Code CLI', 'qwen-code');
   },
 
   async chat(_req: ChatRequest, _creds: ProviderCredentials): Promise<ChatResponse> {

@@ -11,7 +11,9 @@ import { droidCliAdapter } from './adapters/droid-cli.js';
 import { geminiCliAdapter } from './adapters/gemini-cli.js';
 import { opencodeCliAdapter } from './adapters/opencode-cli.js';
 import { qwenCliAdapter } from './adapters/qwen-cli.js';
+import { resolveExplicitModel } from './adapters/model.js';
 import type { AgentCliAdapter } from './adapters/types.js';
+import { createCliEnvironment } from './cli-env.js';
 import type { SpawnFn } from './composer.js';
 import { computeCostUsd } from './pricing.js';
 import { makeLineSplitter, type StreamEvent } from './stream-parser.js';
@@ -132,12 +134,19 @@ export function startAgentRun(opts: StartAgentRunOptions): AgentRunHandle {
   }
   const command = opts.command ?? adapter.command;
   const spawnFn = opts.spawn ?? nodeSpawn;
+  const model = adapter.normalizeModel
+    ? adapter.normalizeModel(opts.model)
+    : (resolveExplicitModel(opts.model) ?? undefined);
 
   const args = adapter.buildArgs({
-    ...(opts.resumeFromSessionId !== undefined ? { resumeFromSessionId: opts.resumeFromSessionId } : {}),
+    ...(opts.resumeFromSessionId !== undefined
+      ? { resumeFromSessionId: opts.resumeFromSessionId }
+      : {}),
     ...(opts.allowedTools !== undefined ? { allowedTools: opts.allowedTools } : {}),
-    ...(opts.appendSystemPrompt !== undefined ? { appendSystemPrompt: opts.appendSystemPrompt } : {}),
-    ...(opts.model !== undefined ? { model: opts.model } : {}),
+    ...(opts.appendSystemPrompt !== undefined
+      ? { appendSystemPrompt: opts.appendSystemPrompt }
+      : {}),
+    ...(model !== undefined ? { model } : {}),
     ...(opts.extraArgs !== undefined ? { extraArgs: opts.extraArgs } : {}),
   });
 
@@ -158,8 +167,13 @@ export function startAgentRun(opts: StartAgentRunOptions): AgentRunHandle {
   // model is different — we fall back to taskkill /T /F at escalation
   // time.
   const detached = !IS_WINDOWS;
-  const spawnOpts: Parameters<SpawnFn>[2] = { cwd: opts.cwd, detached };
-  if (opts.env) spawnOpts.env = { ...process.env, ...opts.env };
+  const baseEnv = createCliEnvironment(opts.env);
+  const env = adapter.prepareEnvironment ? adapter.prepareEnvironment(baseEnv) : baseEnv;
+  const spawnOpts: Parameters<SpawnFn>[2] = {
+    cwd: opts.cwd,
+    detached,
+    env,
+  };
   const child = spawnFn(command, args, spawnOpts);
   const emitter = new EventEmitter();
 
@@ -180,13 +194,8 @@ export function startAgentRun(opts: StartAgentRunOptions): AgentRunHandle {
         // events. Compute cost from the static pricing table when we know
         // the model. Adapters that already carry cost (claude-code) are
         // unaffected because totalCostUsd is non-null.
-        if (
-          ev.kind === 'result' &&
-          ev.totalCostUsd === null &&
-          ev.tokenUsage !== null &&
-          opts.model
-        ) {
-          const usd = computeCostUsd(opts.model, ev.tokenUsage);
+        if (ev.kind === 'result' && ev.totalCostUsd === null && ev.tokenUsage !== null && model) {
+          const usd = computeCostUsd(model, ev.tokenUsage);
           if (usd !== null) {
             ev = { ...ev, totalCostUsd: usd };
           }
@@ -322,8 +331,7 @@ export function startAgentRun(opts: StartAgentRunOptions): AgentRunHandle {
     stop(arg?: StopOptions | NodeJS.Signals): void {
       if (killedByStop) return;
       killedByStop = true;
-      const stopOpts: StopOptions =
-        typeof arg === 'string' ? { signal: arg } : (arg ?? {});
+      const stopOpts: StopOptions = typeof arg === 'string' ? { signal: arg } : (arg ?? {});
       const signal = stopOpts.signal ?? 'SIGTERM';
       const gracefulTimeoutMs = stopOpts.gracefulTimeoutMs ?? DEFAULT_GRACEFUL_TIMEOUT_MS;
       stopEscalation = signal === 'SIGKILL' ? 'sigkill' : 'sigterm';

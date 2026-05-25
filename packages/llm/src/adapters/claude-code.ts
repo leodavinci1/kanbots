@@ -4,6 +4,7 @@ import {
   type AgentRunHandle,
   type StartAgentRunOptions,
 } from '@kanbots/dispatcher';
+import { validateCliExecutable } from '../cli-validation.js';
 import type {
   ChatRequest,
   ChatResponse,
@@ -43,7 +44,7 @@ export const claudeCodeAdapter: ProviderAdapter = {
         error: `Claude Code credentials not found at ${creds.credentialsPath}. Sign in to Claude Code first.`,
       };
     }
-    return { ok: true };
+    return validateCliExecutable('Claude Code CLI', 'claude');
   },
 
   async chat(_req: ChatRequest, _creds: ProviderCredentials): Promise<ChatResponse> {

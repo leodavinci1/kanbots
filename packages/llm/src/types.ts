@@ -1,9 +1,5 @@
 import type { ProviderId } from '@kanbots/local-store';
-import type {
-  AgentRunHandle,
-  StartAgentRunOptions,
-  StreamEvent,
-} from '@kanbots/dispatcher';
+import type { AgentRunHandle, StartAgentRunOptions, StreamEvent } from '@kanbots/dispatcher';
 
 export type { ProviderId };
 
@@ -58,7 +54,10 @@ export interface ProviderAdapter {
   /**
    * Validate that credentials work. Cheap call (e.g. /models).
    */
-  validate(creds: ProviderCredentials): Promise<ValidateResult>;
+  validate(
+    creds: ProviderCredentials,
+    context?: ProviderValidationContext,
+  ): Promise<ValidateResult>;
   /**
    * One-shot chat call. Used by composer/suggester-style helpers and the
    * Settings "Test connection" flow.
@@ -74,6 +73,10 @@ export interface ProviderAdapter {
 export type ProviderCredentials =
   | { kind: 'api-key'; apiKey: string }
   | { kind: 'claude-code-oauth'; credentialsPath: string };
+
+export interface ProviderValidationContext {
+  acpCommand?: string | null;
+}
 
 export interface ModelEntry {
   provider: ProviderId;

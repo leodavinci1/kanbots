@@ -13,6 +13,7 @@ import {
   dispatchChatTool,
   reconcileIssueLabels,
   startToolBridge,
+  type AgentRunEventPayload,
   type AgentSupervisor,
   type AutopilotManager,
   type ChatHandlers,
@@ -45,11 +46,7 @@ import {
   type Store,
   type WorkspaceConfig,
 } from '@kanbots/local-store';
-import {
-  cancelClaudeLogin,
-  isClaudeAuthenticated,
-  startClaudeLogin,
-} from './claude-auth.js';
+import { cancelClaudeLogin, isClaudeAuthenticated, startClaudeLogin } from './claude-auth.js';
 import {
   cancelCodexLogin,
   CODEX_AUTH_PATH,
@@ -153,21 +150,19 @@ import {
   type UserMe,
 } from '@kanbots/cloud-client';
 import { watchDbFile, type DbWatcher } from './db-watcher.js';
+import { createSubscriptionRegistry, type OwnedSubscriptionRegistry } from './ipc/subscriptions.js';
 import {
-  createSubscriptionRegistry,
-  type OwnedSubscriptionRegistry,
-} from './ipc/subscriptions.js';
-import { registerHandlers } from './ipc/register.js';
-import {
-  closeProvidersStoreForShutdown,
-  registerProvidersIpc,
-} from './providers-ipc.js';
+  CHANNEL_PREFIX,
+  registerHandlers,
+  SUBSCRIBE_CHANNEL,
+  UNSUBSCRIBE_CHANNEL,
+} from './ipc/register.js';
+import { toIpcError } from './ipc/errors.js';
+import { closeProvidersStoreForShutdown, registerProvidersIpc } from './providers-ipc.js';
+import { hydrateProcessEnvFromLoginShell } from './shell-env.js';
 import { registerCloudComposerHandlers } from './cloud-composer.js';
 import { startCloudRun, type CloudRunHandle } from './cloud-run-dispatcher.js';
-import {
-  broadcastWorkspaceTouched,
-  registerWorkspaceTreeIpc,
-} from './workspace-tree-ipc.js';
+import { broadcastWorkspaceTouched, registerWorkspaceTreeIpc } from './workspace-tree-ipc.js';
 import { SentryPoller } from './sentry-poller.js';
 import {
   decryptToken,
@@ -241,9 +236,9 @@ const chatWindows = new Set<BrowserWindow>();
  */
 let deviceChatStore: Store | null = null;
 let deviceChatSupervisor: AgentSupervisor | null = null;
+let deviceChatSubscriptions: OwnedSubscriptionRegistry | null = null;
 
-const DEFAULT_CLOUD_BASE_URL =
-  process.env['KANBOTS_CLOUD_BASE_URL'] ?? 'https://app.kanbots.dev';
+const DEFAULT_CLOUD_BASE_URL = process.env['KANBOTS_CLOUD_BASE_URL'] ?? 'https://app.kanbots.dev';
 
 /**
  * Process-wide cloud client. The base URL and token are resolved
@@ -375,6 +370,14 @@ function broadcastIssueChange(): void {
   const sender = mainWindow?.webContents;
   if (!sender || sender.isDestroyed()) return;
   sender.send('issues:changed', {});
+}
+
+function forwardAgentRunEvent(payload: AgentRunEventPayload, ownerId: number | undefined): void {
+  const target = findWebContentsForOwner(ownerId);
+  if (target && !target.isDestroyed()) {
+    target.send('agent-runs:events:data', payload);
+  }
+  if (payload.kind === 'status') broadcastIssueChange();
 }
 
 function wrapNotifyingSource(source: IssueSource): IssueSource {
@@ -657,16 +660,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
 
   const subscriptions = createSubscriptionRegistry({
     supervisor,
-    forward: (payload, ownerId) => {
-      // Send to the window that opened the subscription. Falls back to the
-      // main window when ownerId is missing (legacy callers) or the original
-      // window has gone away.
-      const target = findWebContentsForOwner(ownerId);
-      if (target && !target.isDestroyed()) {
-        target.send('agent-runs:events:data', payload);
-      }
-      if (payload.kind === 'status') broadcastIssueChange();
-    },
+    forward: forwardAgentRunEvent,
   });
   const autopilot = createAutopilotManager({
     store,
@@ -738,9 +732,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
             sessionCostBudgetUsd: input.sessionCostBudgetUsd,
           };
           const next: WorkspaceConfig =
-            config.mode === 'github'
-              ? { ...config, defaults }
-              : { ...config, defaults };
+            config.mode === 'github' ? { ...config, defaults } : { ...config, defaults };
           await writeWorkspaceConfig(gitRoot, next);
           config = next;
           if (activeWorkspace && activeWorkspace.repoPath === gitRoot) {
@@ -790,7 +782,9 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
     },
     subscriptions,
   });
-  const unregisterHandlers = registerHandlers(handlers, subscriptions);
+  const unregisterHandlers = registerHandlers(handlers, subscriptions, {
+    registerEventStreams: false,
+  });
   handlersHolder.handlers = handlers;
 
   // Tie subscriptions to the renderer that opened them. When the webContents
@@ -802,6 +796,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
     if (!sender) return () => {};
     const handler = (): void => {
       subscriptions.closeAllForOwner(ownerId);
+      deviceChatSubscriptions?.closeAllForOwner(ownerId);
     };
     sender.on('destroyed', handler);
     return () => {
@@ -1006,18 +1001,32 @@ function resolveChatCwd(): string {
 async function ensureDeviceChat(): Promise<{
   store: Store;
   supervisor: AgentSupervisor;
+  subscriptions: OwnedSubscriptionRegistry;
 }> {
-  if (deviceChatStore !== null && deviceChatSupervisor !== null) {
-    return { store: deviceChatStore, supervisor: deviceChatSupervisor };
+  if (
+    deviceChatStore !== null &&
+    deviceChatSupervisor !== null &&
+    deviceChatSubscriptions !== null
+  ) {
+    return {
+      store: deviceChatStore,
+      supervisor: deviceChatSupervisor,
+      subscriptions: deviceChatSubscriptions,
+    };
   }
   const store = openStore({ path: deviceChatDbPath() });
   const supervisor = await createSupervisor({
     store,
     repoPath: resolveChatCwd,
   });
+  const subscriptions = createSubscriptionRegistry({
+    supervisor,
+    forward: forwardAgentRunEvent,
+  });
   deviceChatStore = store;
   deviceChatSupervisor = supervisor;
-  return { store, supervisor };
+  deviceChatSubscriptions = subscriptions;
+  return { store, supervisor, subscriptions };
 }
 
 function registerDeviceChatIpc(): void {
@@ -1043,26 +1052,64 @@ function registerDeviceChatIpc(): void {
     'chat:sessions:set-active',
   ];
   for (const channel of channels) {
-    ipcMain.handle(
-      `kanbots:invoke:${channel}`,
-      async (_event, args: unknown) => {
-        try {
-          const map = await getHandlers();
-          // The Handlers map types args per-channel; the IPC bridge passes them
-          // through opaquely so the runtime cast is safe.
-          const fn = map[channel] as (a: unknown) => Promise<unknown>;
-          return await fn(args);
-        } catch (err) {
-          throw new Error(
-            JSON.stringify({
-              code: err instanceof Error && err.name ? err.name : 'Error',
-              message: err instanceof Error ? err.message : String(err),
-            }),
-          );
-        }
-      },
-    );
+    ipcMain.handle(`kanbots:invoke:${channel}`, async (_event, args: unknown) => {
+      try {
+        const map = await getHandlers();
+        // The Handlers map types args per-channel; the IPC bridge passes them
+        // through opaquely so the runtime cast is safe.
+        const fn = map[channel] as (a: unknown) => Promise<unknown>;
+        return await fn(args);
+      } catch (err) {
+        throw new Error(
+          JSON.stringify({
+            code: err instanceof Error && err.name ? err.name : 'Error',
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    });
   }
+}
+
+interface AgentEventSubscribeArgs {
+  runId: number;
+  sinceSeq?: number;
+  scope?: 'workspace' | 'chat';
+}
+
+interface AgentEventUnsubscribeArgs {
+  subscriptionId: string;
+}
+
+function registerAgentRunEventStreamIpc(): void {
+  ipcMain.handle(`${CHANNEL_PREFIX}${SUBSCRIBE_CHANNEL}`, async (event, args: unknown) => {
+    try {
+      const input = args as AgentEventSubscribeArgs;
+      const subscriptions =
+        input.scope === 'chat'
+          ? (await ensureDeviceChat()).subscriptions
+          : activeWorkspace?.subscriptions;
+      if (!subscriptions) throw new Error('No active workspace is open.');
+      return subscriptions.register({
+        runId: input.runId,
+        ownerId: event.sender.id,
+        ...(input.sinceSeq !== undefined ? { sinceSeq: input.sinceSeq } : {}),
+      });
+    } catch (err) {
+      throw new Error(JSON.stringify(toIpcError(err)));
+    }
+  });
+
+  ipcMain.handle(`${CHANNEL_PREFIX}${UNSUBSCRIBE_CHANNEL}`, async (_event, args: unknown) => {
+    try {
+      const input = args as AgentEventUnsubscribeArgs;
+      activeWorkspace?.subscriptions.unregister(input.subscriptionId);
+      deviceChatSubscriptions?.unregister(input.subscriptionId);
+      return undefined;
+    } catch (err) {
+      throw new Error(JSON.stringify(toIpcError(err)));
+    }
+  });
 }
 
 // Local-first launch: cloud sign-in is OPTIONAL. By default every IPC
@@ -1128,7 +1175,9 @@ function registerIpc(): void {
   // Provider config (Claude Code / Codex CLI defaults) is per-user, so its
   // handlers live at app scope, not workspace scope — survives cloud and
   // local workspace transitions. Wrapped by the cloud-auth gate above.
-  registerProvidersIpc();
+  registerProvidersIpc({
+    getAcpCommand: () => activeWorkspace?.config.acpCommand ?? null,
+  });
 
   // Workspace file tree + git-status IPC. Read source of truth lazily
   // at call time so the same handlers serve both cloud-mode (bound
@@ -1148,6 +1197,7 @@ function registerIpc(): void {
   // mode. Registered at app scope; the workspace-scoped registerHandlers
   // skips `chat:*` (see ipc/register.ts).
   registerDeviceChatIpc();
+  registerAgentRunEventStreamIpc();
 
   ipcMain.handle('kanbots:bootstrap', async (): Promise<BootstrapPayload> => {
     const [recents, cloudRecents, claudeAuthed, cloudStatus] = await Promise.all([
@@ -1160,10 +1210,8 @@ function registerIpc(): void {
     // shell out and can take seconds. The deeper checks still run via the
     // dedicated `kanbots:<agent>-auth-status` channels and via the providers
     // handler once the renderer queries it.
-    const codexAuthed =
-      existsSync(CODEX_AUTH_PATH) || Boolean(process.env.OPENAI_API_KEY);
-    const geminiAuthed =
-      existsSync(GEMINI_AUTH_PATH) || Boolean(process.env.GEMINI_API_KEY);
+    const codexAuthed = existsSync(CODEX_AUTH_PATH) || Boolean(process.env.OPENAI_API_KEY);
+    const geminiAuthed = existsSync(GEMINI_AUTH_PATH) || Boolean(process.env.GEMINI_API_KEY);
     const ampAuthed =
       existsSync(AMP_SETTINGS_PATH) ||
       existsSync(AMP_AUTH_PATH) ||
@@ -1415,10 +1463,7 @@ function registerIpc(): void {
 
   ipcMain.handle(
     'kanbots:cloud:orgs-list',
-    async (
-      _event,
-      opts?: { cursor?: string; limit?: number },
-    ): Promise<OrgListResponse> => {
+    async (_event, opts?: { cursor?: string; limit?: number }): Promise<OrgListResponse> => {
       return cloudClient.orgs.list(opts);
     },
   );
@@ -1449,30 +1494,21 @@ function registerIpc(): void {
 
   ipcMain.handle(
     'kanbots:cloud:cards-list',
-    async (
-      _event,
-      args: { orgSlug: string; projectSlug: string; query?: ListCardsQuery },
-    ) => {
+    async (_event, args: { orgSlug: string; projectSlug: string; query?: ListCardsQuery }) => {
       return cloudClient.cards.list(args.orgSlug, args.projectSlug, args.query);
     },
   );
 
   ipcMain.handle(
     'kanbots:cloud:cards-create',
-    async (
-      _event,
-      args: { orgSlug: string; projectSlug: string; body: CreateCardRequest },
-    ) => {
+    async (_event, args: { orgSlug: string; projectSlug: string; body: CreateCardRequest }) => {
       return cloudClient.cards.create(args.orgSlug, args.projectSlug, args.body);
     },
   );
 
   ipcMain.handle(
     'kanbots:cloud:cards-get',
-    async (
-      _event,
-      args: { orgSlug: string; projectSlug: string; number: number },
-    ) => {
+    async (_event, args: { orgSlug: string; projectSlug: string; number: number }) => {
       return cloudClient.cards.get(args.orgSlug, args.projectSlug, args.number);
     },
   );
@@ -1498,12 +1534,9 @@ function registerIpc(): void {
     if (mainWindow) mainWindow.webContents.reloadIgnoringCache();
   });
 
-  ipcMain.handle(
-    'kanbots:recent-cloud-workspaces',
-    async (): Promise<RecentCloudWorkspace[]> => {
-      return readCloudRecents();
-    },
-  );
+  ipcMain.handle('kanbots:recent-cloud-workspaces', async (): Promise<RecentCloudWorkspace[]> => {
+    return readCloudRecents();
+  });
 
   ipcMain.handle(
     'kanbots:cloud:cost-today',
@@ -1551,10 +1584,7 @@ function registerIpc(): void {
 
   ipcMain.handle(
     'kanbots:cloud:project-binding-clear',
-    async (
-      _event,
-      args: { orgSlug: string; projectSlug: string },
-    ): Promise<void> => {
+    async (_event, args: { orgSlug: string; projectSlug: string }): Promise<void> => {
       await clearCloudProjectBinding(args.orgSlug, args.projectSlug);
       if (
         activeCloudWorkspace !== null &&
@@ -1579,13 +1609,7 @@ function registerIpc(): void {
       },
     ): Promise<CardSummary> => {
       const opts = args.ifMatch !== undefined ? { ifMatch: args.ifMatch } : undefined;
-      return cloudClient.cards.update(
-        args.orgSlug,
-        args.projectSlug,
-        args.number,
-        args.body,
-        opts,
-      );
+      return cloudClient.cards.update(args.orgSlug, args.projectSlug, args.number, args.body, opts);
     },
   );
 
@@ -1703,8 +1727,8 @@ function registerIpc(): void {
         throw new Error('No active cloud workspace.');
       }
       if (
-        activeCloudWorkspace.orgSlug !== args.orgSlug
-        || activeCloudWorkspace.projectSlug !== args.projectSlug
+        activeCloudWorkspace.orgSlug !== args.orgSlug ||
+        activeCloudWorkspace.projectSlug !== args.projectSlug
       ) {
         throw new Error('Cloud workspace mismatch — reopen the project and try again.');
       }
@@ -1755,15 +1779,10 @@ function registerIpc(): void {
 
       void (async () => {
         try {
-          const iter = cloudClient.runs.stream(
-            args.orgSlug,
-            args.projectSlug,
-            args.runId,
-            {
-              ...(args.lastEventId !== undefined ? { lastEventId: args.lastEventId } : {}),
-              signal: controller.signal,
-            },
-          );
+          const iter = cloudClient.runs.stream(args.orgSlug, args.projectSlug, args.runId, {
+            ...(args.lastEventId !== undefined ? { lastEventId: args.lastEventId } : {}),
+            signal: controller.signal,
+          });
           for await (const ev of iter) {
             if (sender.isDestroyed()) break;
             // sync-09: stop_signal is the downstream cancel channel.
@@ -2037,13 +2056,8 @@ async function createChatWindow(conversationId: number | null): Promise<BrowserW
   const ownerWebContentsId = win.webContents.id;
   win.on('closed', () => {
     chatWindows.delete(win);
-    // Workspace-scoped subscription registry only exists when a local
-    // workspace is open. In cloud-only mode the chat window's
-    // agent-run streams (if any) come from the device chat path and
-    // there's nothing to release here.
-    if (activeWorkspace) {
-      activeWorkspace.subscriptions.closeAllForOwner(ownerWebContentsId);
-    }
+    activeWorkspace?.subscriptions.closeAllForOwner(ownerWebContentsId);
+    deviceChatSubscriptions?.closeAllForOwner(ownerWebContentsId);
   });
 
   forwardRendererConsole(win, 'chat');
@@ -2112,10 +2126,7 @@ function buildChatToolRuntime(args: {
       if (provider === 'codex-cli') {
         extraArgs = buildCodexMcpArgs('kanbots', mcpServer);
       } else {
-        const configPath = join(
-          runtimeDir,
-          `mcp-${randomUUID().slice(0, 8)}.json`,
-        );
+        const configPath = join(runtimeDir, `mcp-${randomUUID().slice(0, 8)}.json`);
         const config = { mcpServers: { kanbots: mcpServer } };
         await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
         extraArgs = ['--mcp-config', configPath];
@@ -2157,6 +2168,7 @@ function tomlString(s: string): string {
 }
 
 void app.whenReady().then(async () => {
+  void hydrateProcessEnvFromLoginShell();
   Menu.setApplicationMenu(null);
   registerIpc();
   await createWindow();

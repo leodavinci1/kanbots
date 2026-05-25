@@ -3,6 +3,7 @@ import {
   type AgentRunHandle,
   type StartAgentRunOptions,
 } from '@kanbots/dispatcher';
+import { validateCliExecutable } from '../cli-validation.js';
 import type {
   ChatRequest,
   ChatResponse,
@@ -34,10 +35,7 @@ export const geminiCliAdapter: ProviderAdapter = {
   },
 
   async validate(_creds: ProviderCredentials): Promise<ValidateResult> {
-    // Keep validate cheap and sandbox-safe — we don't shell out to
-    // `gemini --version` here. The dispatcher surfaces a meaningful error
-    // at run time if the binary is missing on PATH.
-    return { ok: true };
+    return validateCliExecutable('Gemini CLI', 'gemini');
   },
 
   async chat(_req: ChatRequest, _creds: ProviderCredentials): Promise<ChatResponse> {

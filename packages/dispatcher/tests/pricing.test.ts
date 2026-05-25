@@ -25,6 +25,14 @@ describe('pricing', () => {
     expect(cost).toBeCloseTo(6.25, 5);
   });
 
+  it('computes costs for Codex normalized model ids', () => {
+    expect(computeCostUsd('gpt-5.5', { input: 1_000_000, output: 500_000 })).toBeCloseTo(6.25, 5);
+    expect(computeCostUsd('gpt-5.4-mini', { input: 1_000_000, output: 500_000 })).toBeCloseTo(
+      1.25,
+      5,
+    );
+  });
+
   it('discounts cached input tokens at the cached rate', () => {
     // gpt-5: $1.25/Mtok billable input, $0.125/Mtok cached input, $10/Mtok output
     // 1M total input (200k cached, 800k billable), 0 output

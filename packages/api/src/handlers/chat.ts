@@ -9,11 +9,7 @@ import type {
   Message,
   ProviderId,
 } from '@kanbots/local-store';
-import type {
-  ChatPayload,
-  ChatPostMessageResult,
-  ChatSessionPayload,
-} from '../bridge.js';
+import type { ChatPayload, ChatPostMessageResult, ChatSessionPayload } from '../bridge.js';
 import { chatSessionToPayload } from '../bridge.js';
 import { alreadyActive, notFound, parseArgs } from './errors.js';
 import type { HandlerDeps } from './types.js';
@@ -146,13 +142,9 @@ const postMessageSchema = z
   })
   .strict();
 
-const stopRunSchema = z
-  .object({ runId: z.number().int().positive() })
-  .strict();
+const stopRunSchema = z.object({ runId: z.number().int().positive() }).strict();
 
-const sessionsListSchema = z
-  .object({ conversationId: z.number().int().positive() })
-  .strict();
+const sessionsListSchema = z.object({ conversationId: z.number().int().positive() }).strict();
 
 const sessionsCreateSchema = z
   .object({
@@ -170,9 +162,7 @@ const sessionsRenameSchema = z
   })
   .strict();
 
-const sessionsDeleteSchema = z
-  .object({ id: z.number().int().positive() })
-  .strict();
+const sessionsDeleteSchema = z.object({ id: z.number().int().positive() }).strict();
 
 const sessionsSetActiveSchema = z
   .object({
@@ -186,9 +176,7 @@ const sessionsSetActiveSchema = z
 // chat:thread-sessions:* channels dispatch through these so the
 // renderer's session dropdown can drive issue chats with the same
 // affordances it uses for the standalone chat surface.
-const threadSessionsListSchema = z
-  .object({ threadId: z.number().int().positive() })
-  .strict();
+const threadSessionsListSchema = z.object({ threadId: z.number().int().positive() }).strict();
 
 const threadSessionsCreateSchema = z
   .object({
@@ -221,16 +209,12 @@ You can use the kanban tools provided by the kanbots MCP server (createIssue, up
 
 When the user asks about "the board", "open issues", "recent runs", or similar, prefer the kanban tools over reading the database directly.`;
 
-function makeChatPayload(
-  deps: HandlerDeps,
-  conversation: ChatConversation,
-): ChatPayload {
+function makeChatPayload(deps: HandlerDeps, conversation: ChatConversation): ChatPayload {
   const messages: Message[] = deps.store.messages.list(conversation.threadId);
   const events: AgentEvent[] = deps.store.events.listByThread(conversation.threadId);
   const cards: Card[] = deps.store.cards.listByThread(conversation.threadId);
   const activeRun = deps.store.agentRuns.findActiveForThread(conversation.threadId);
-  const latestRun =
-    activeRun ?? deps.store.agentRuns.findLatestForThread(conversation.threadId);
+  const latestRun = activeRun ?? deps.store.agentRuns.findLatestForThread(conversation.threadId);
   const sessions = deps.store.chatSessions
     .listByConversation(conversation.id)
     .map(chatSessionToPayload);
@@ -249,10 +233,7 @@ export async function list(deps: HandlerDeps): Promise<ChatConversation[]> {
   return deps.store.chatConversations.list();
 }
 
-export async function create(
-  deps: HandlerDeps,
-  args: { title?: string },
-): Promise<ChatPayload> {
+export async function create(deps: HandlerDeps, args: { title?: string }): Promise<ChatPayload> {
   const parsed = parseArgs(createSchema, args ?? {});
   const conversation = deps.store.chatConversations.create({
     title: parsed.title ?? DEFAULT_TITLE,
@@ -425,8 +406,12 @@ export async function postMessage(
       parsed.provider ?? (session.agentProvider as AgentRunProvider),
       willResume ? latest : null,
     );
-    const dispatchModel = parsed.model ?? session.agentModel ?? undefined;
-    let toolPrep: Awaited<ReturnType<NonNullable<typeof deps.chatTools>['prepareForRun']>> | null = null;
+    const inheritSessionModel =
+      parsed.provider === undefined || parsed.provider === session.agentProvider;
+    const dispatchModel =
+      parsed.model ?? (inheritSessionModel ? (session.agentModel ?? undefined) : undefined);
+    let toolPrep: Awaited<ReturnType<NonNullable<typeof deps.chatTools>['prepareForRun']>> | null =
+      null;
     if (deps.chatTools) {
       try {
         toolPrep = await deps.chatTools.prepareForRun({ provider: dispatchProvider });
@@ -472,10 +457,7 @@ export async function postMessage(
   };
 }
 
-export async function stopRun(
-  deps: HandlerDeps,
-  args: { runId: number },
-): Promise<AgentRun> {
+export async function stopRun(deps: HandlerDeps, args: { runId: number }): Promise<AgentRun> {
   const parsed = parseArgs(stopRunSchema, args);
   return deps.supervisor.stop(parsed.runId);
 }
@@ -524,9 +506,7 @@ export async function renameSession(
   const parsed = parseArgs(sessionsRenameSchema, args);
   const existing = deps.store.chatSessions.findById(parsed.id);
   if (!existing) throw notFound(`chat session ${parsed.id} not found`);
-  return chatSessionToPayload(
-    deps.store.chatSessions.rename(parsed.id, parsed.title),
-  );
+  return chatSessionToPayload(deps.store.chatSessions.rename(parsed.id, parsed.title));
 }
 
 export async function deleteSession(
@@ -618,13 +598,9 @@ export async function renameThreadSession(
   const existing = deps.store.chatSessions.findById(parsed.id);
   if (!existing) throw notFound(`chat session ${parsed.id} not found`);
   if (existing.threadId === null) {
-    throw notFound(
-      `chat session ${parsed.id} is not an issue-thread session`,
-    );
+    throw notFound(`chat session ${parsed.id} is not an issue-thread session`);
   }
-  return chatSessionToPayload(
-    deps.store.chatSessions.rename(parsed.id, parsed.title),
-  );
+  return chatSessionToPayload(deps.store.chatSessions.rename(parsed.id, parsed.title));
 }
 
 export async function deleteThreadSession(
@@ -635,9 +611,7 @@ export async function deleteThreadSession(
   const existing = deps.store.chatSessions.findById(parsed.id);
   if (!existing) return { ok: true };
   if (existing.threadId === null) {
-    throw notFound(
-      `chat session ${parsed.id} is not an issue-thread session`,
-    );
+    throw notFound(`chat session ${parsed.id} is not an issue-thread session`);
   }
   // Stop any in-flight run on the session before deleting so we don't
   // leave a child process attached to a row that just disappeared.

@@ -155,8 +155,12 @@ const MODELS_BY_PROVIDER: Record<ProviderId, Array<{ id: string; label: string }
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   'codex-cli': [
-    { id: 'gpt-5', label: 'GPT-5' },
-    { id: 'gpt-5-mini', label: 'GPT-5 mini' },
+    { id: 'default', label: 'Codex config default' },
+    { id: 'gpt-5.5', label: 'GPT-5.5' },
+    { id: 'gpt-5.4', label: 'GPT-5.4' },
+    { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
+    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+    { id: 'gpt-5.2', label: 'GPT-5.2' },
   ],
   'gemini-cli': [
     { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
@@ -226,10 +230,7 @@ function runLoginForProvider(
   }
 }
 
-function cancelLoginForProvider(
-  bridge: NonNullable<Window['kanbots']>,
-  id: ProviderId,
-): void {
+function cancelLoginForProvider(bridge: NonNullable<Window['kanbots']>, id: ProviderId): void {
   switch (id) {
     case 'claude-code':
       void bridge.claudeLoginCancel();
@@ -335,7 +336,10 @@ export function ProvidersSettingsModal({ onClose }: ProvidersSettingsModalProps)
     e.stopPropagation();
   }
 
-  async function handleSetDefaults(input: { defaultProvider?: ProviderId | null; defaultModel?: string | null }): Promise<void> {
+  async function handleSetDefaults(input: {
+    defaultProvider?: ProviderId | null;
+    defaultModel?: string | null;
+  }): Promise<void> {
     try {
       const next = await api.setProviderDefaults(input);
       setPayload(next);
@@ -355,8 +359,21 @@ export function ProvidersSettingsModal({ onClose }: ProvidersSettingsModalProps)
         <div className="kb-modal-head">
           <h2>AI providers</h2>
           <span className="grow" />
-          <button type="button" className="x-btn" onClick={onClose} aria-label="Close" title="Close">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <button
+            type="button"
+            className="x-btn"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M6 6l12 12M18 6l-12 12" />
             </svg>
           </button>
@@ -374,10 +391,9 @@ export function ProvidersSettingsModal({ onClose }: ProvidersSettingsModalProps)
             <>
               {!payload.anyConfigured ? (
                 <div className="kb-sentry-warn" role="status">
-                  <strong>No providers configured.</strong> Sign in to any of the
-                  supported agent CLIs below (Claude Code, Codex, Gemini, Amp,
-                  Cursor, Copilot, OpenCode, Droid, CCR, Qwen) to enable agent
-                  runs.
+                  <strong>No providers configured.</strong> Sign in to any of the supported agent
+                  CLIs below (Claude Code, Codex, Gemini, Amp, Cursor, Copilot, OpenCode, Droid,
+                  CCR, Qwen) to enable agent runs.
                 </div>
               ) : null}
 
@@ -456,10 +472,7 @@ type TestState =
   | { kind: 'ok'; models?: string[] }
   | { kind: 'error'; message: string };
 
-type LoginState =
-  | { kind: 'idle' }
-  | { kind: 'running' }
-  | { kind: 'error'; message: string };
+type LoginState = { kind: 'idle' } | { kind: 'running' } | { kind: 'error'; message: string };
 
 interface SectionProps {
   spec: ProviderSpec;
@@ -507,7 +520,9 @@ function ProviderSection({ spec, config, onChanged }: SectionProps) {
   async function handleTest(): Promise<void> {
     setTestState({ kind: 'running' });
     try {
-      const result: ProviderTestConnectionResult = await api.testProviderConnection({ id: spec.id });
+      const result: ProviderTestConnectionResult = await api.testProviderConnection({
+        id: spec.id,
+      });
       if (result.ok) {
         const out: TestState = { kind: 'ok' };
         if (result.models !== undefined) out.models = result.models;
@@ -645,7 +660,11 @@ function ProviderSection({ spec, config, onChanged }: SectionProps) {
 
       {testState.kind === 'ok' ? (
         <div className="kb-sentry-ok">
-          ✓ Connection ok{testState.models && testState.models.length > 0 ? ` — ${testState.models.length} models available` : ''}.
+          ✓ Connection ok
+          {testState.models && testState.models.length > 0
+            ? ` — ${testState.models.length} models available`
+            : ''}
+          .
         </div>
       ) : null}
       {testState.kind === 'error' ? (

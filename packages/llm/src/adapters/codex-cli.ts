@@ -3,6 +3,7 @@ import {
   type AgentRunHandle,
   type StartAgentRunOptions,
 } from '@kanbots/dispatcher';
+import { validateCliExecutable } from '../cli-validation.js';
 import type {
   ChatRequest,
   ChatResponse,
@@ -34,10 +35,7 @@ export const codexCliAdapter: ProviderAdapter = {
   },
 
   async validate(_creds: ProviderCredentials): Promise<ValidateResult> {
-    // We don't probe `codex --version` here to keep validate cheap and
-    // sandbox-safe. The dispatcher will surface a meaningful error if the
-    // binary is missing on PATH at run time.
-    return { ok: true };
+    return validateCliExecutable('Codex CLI', 'codex');
   },
 
   async chat(_req: ChatRequest, _creds: ProviderCredentials): Promise<ChatResponse> {

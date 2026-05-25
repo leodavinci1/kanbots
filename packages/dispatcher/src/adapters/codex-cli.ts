@@ -1,12 +1,6 @@
-import {
-  detectRateLimit as detectRateLimitFromText,
-  type StreamEvent,
-} from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { detectRateLimit as detectRateLimitFromText, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 // Schema mirrored from the canonical Rust definitions in
 // codex-rs/exec/src/exec_events.rs (ThreadEvent / ThreadItem). Kept as TS
@@ -126,16 +120,29 @@ type CodexEvent =
 
 const SYSTEM_PROMPT_DELIMITER = '\n\n---\n\n';
 
+const LEGACY_CODEX_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  'gpt-5': 'gpt-5.5',
+  'gpt-5-mini': 'gpt-5.4-mini',
+};
+
+export function normalizeCodexModel(model: string | undefined): string | undefined {
+  const trimmed = model?.trim();
+  if (!trimmed || trimmed === 'default') return undefined;
+  return LEGACY_CODEX_MODEL_ALIASES[trimmed] ?? trimmed;
+}
+
 export const codexCliAdapter: AgentCliAdapter = {
   command: 'codex',
   promptDelivery: 'argv',
+  normalizeModel: normalizeCodexModel,
 
   buildArgs(opts: BuildArgsInput): string[] {
     // The supervisor passes `appendSystemPrompt` through opts; we ignore it
     // here because codex has no equivalent flag — composePrompt prepends it
     // to the user prompt instead. `allowedTools` is similarly N/A: codex's
     // tool surface is fixed and gated by sandbox/approval policy.
-    const isResume = typeof opts.resumeFromSessionId === 'string' && opts.resumeFromSessionId.length > 0;
+    const isResume =
+      typeof opts.resumeFromSessionId === 'string' && opts.resumeFromSessionId.length > 0;
     const args: string[] = ['exec'];
     if (isResume) {
       args.push('resume', opts.resumeFromSessionId as string);
@@ -151,9 +158,7 @@ export const codexCliAdapter: AgentCliAdapter = {
       'workspace-write',
       '--dangerously-bypass-approvals-and-sandbox',
     );
-    if (opts.model) {
-      args.push('-m', opts.model);
-    }
+    appendModelArg(args, '-m', normalizeCodexModel(opts.model));
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }

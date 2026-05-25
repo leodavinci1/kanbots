@@ -4,12 +4,13 @@ import type { OwnedSubscriptionRegistry } from './subscriptions.js';
 import type { Handlers } from '@kanbots/api';
 
 export const CHANNEL_PREFIX = 'kanbots:invoke:';
-const SUBSCRIBE_CHANNEL = 'agent-runs:events:subscribe';
-const UNSUBSCRIBE_CHANNEL = 'agent-runs:events:unsubscribe';
+export const SUBSCRIBE_CHANNEL = 'agent-runs:events:subscribe';
+export const UNSUBSCRIBE_CHANNEL = 'agent-runs:events:unsubscribe';
 
 interface SubscribeArgs {
   runId: number;
   sinceSeq?: number;
+  scope?: 'workspace' | 'chat';
 }
 
 interface UnsubscribeArgs {
@@ -35,11 +36,17 @@ function wrapHandler(
   };
 }
 
+export interface RegisterHandlersOptions {
+  registerEventStreams?: boolean;
+}
+
 export function registerHandlers(
   handlers: Handlers,
   registry: OwnedSubscriptionRegistry,
+  opts: RegisterHandlersOptions = {},
 ): () => void {
   const registered: string[] = [];
+  const registerEventStreams = opts.registerEventStreams ?? true;
 
   for (const channel of Object.keys(handlers) as Array<keyof Handlers>) {
     if (channel === SUBSCRIBE_CHANNEL || channel === UNSUBSCRIBE_CHANNEL) {
@@ -66,28 +73,30 @@ export function registerHandlers(
     registered.push(channel);
   }
 
-  ipcMain.handle(
-    `${CHANNEL_PREFIX}${SUBSCRIBE_CHANNEL}`,
-    wrapHandler((event, args) => {
-      const a = args as SubscribeArgs;
-      return registry.register({
-        runId: a.runId,
-        ownerId: event.sender.id,
-        ...(a.sinceSeq !== undefined ? { sinceSeq: a.sinceSeq } : {}),
-      });
-    }),
-  );
-  registered.push(SUBSCRIBE_CHANNEL);
+  if (registerEventStreams) {
+    ipcMain.handle(
+      `${CHANNEL_PREFIX}${SUBSCRIBE_CHANNEL}`,
+      wrapHandler((event, args) => {
+        const a = args as SubscribeArgs;
+        return registry.register({
+          runId: a.runId,
+          ownerId: event.sender.id,
+          ...(a.sinceSeq !== undefined ? { sinceSeq: a.sinceSeq } : {}),
+        });
+      }),
+    );
+    registered.push(SUBSCRIBE_CHANNEL);
 
-  ipcMain.handle(
-    `${CHANNEL_PREFIX}${UNSUBSCRIBE_CHANNEL}`,
-    wrapHandler((_event, args) => {
-      const a = args as UnsubscribeArgs;
-      registry.unregister(a.subscriptionId);
-      return undefined;
-    }),
-  );
-  registered.push(UNSUBSCRIBE_CHANNEL);
+    ipcMain.handle(
+      `${CHANNEL_PREFIX}${UNSUBSCRIBE_CHANNEL}`,
+      wrapHandler((_event, args) => {
+        const a = args as UnsubscribeArgs;
+        registry.unregister(a.subscriptionId);
+        return undefined;
+      }),
+    );
+    registered.push(UNSUBSCRIBE_CHANNEL);
+  }
 
   return () => {
     for (const channel of registered) {

@@ -15,6 +15,7 @@ import type {
   ProviderAdapter,
   ProviderCredentials,
   ProviderId,
+  ProviderValidationContext,
   ValidateResult,
 } from './types.js';
 
@@ -45,8 +46,9 @@ export function listAdapters(): ProviderAdapter[] {
 export async function validateProvider(
   id: ProviderId,
   creds: ProviderCredentials,
+  context?: ProviderValidationContext,
 ): Promise<ValidateResult> {
-  return getAdapter(id).validate(creds);
+  return getAdapter(id).validate(creds, context);
 }
 
 export async function chat(

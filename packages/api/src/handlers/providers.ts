@@ -9,7 +9,7 @@ import type {
   ProvidersPayload,
 } from '../bridge.js';
 import { badRequest, parseArgs } from './errors.js';
-import type { ProvidersRuntime } from './types.js';
+import type { ProvidersRuntime, WorkspaceAcpCommandAccessor } from './types.js';
 
 /**
  * Narrow deps for provider handlers. Provider config is user-level (one
@@ -21,6 +21,7 @@ import type { ProvidersRuntime } from './types.js';
 export interface ProvidersHandlerDeps {
   store: Pick<Store, 'providers' | 'providerSettings'>;
   providers: ProvidersRuntime;
+  acpCommand?: Pick<WorkspaceAcpCommandAccessor, 'get'>;
 }
 
 const PROVIDER_ID_SCHEMA = z.enum([
@@ -75,9 +76,7 @@ export async function save(
   // The app never stores API keys — each CLI either drives its own OAuth
   // (`claude-code`, `codex-cli`, etc.) or reads a well-known env var.
   if (parsed.apiKey !== undefined && parsed.apiKey !== null && parsed.apiKey !== '') {
-    throw badRequest(
-      `${id} does not accept an API key here. ${apiKeyHintFor(id)}`,
-    );
+    throw badRequest(`${id} does not accept an API key here. ${apiKeyHintFor(id)}`);
   }
 
   const patch: Parameters<typeof deps.store.providers.update>[1] = {};
@@ -101,12 +100,12 @@ export async function testConnection(
       credentialsPath: claudeCodeCredentialsPath(),
     };
   } else {
-    // codex-cli, gemini-cli, amp-cli: validate is a no-op; their adapters
-    // don't read creds — they rely on the CLI finding its own auth.
     creds = { kind: 'api-key', apiKey: '' };
   }
 
-  const result = await validateProvider(id, creds);
+  const result = await validateProvider(id, creds, {
+    acpCommand: id === 'acp' ? readWorkspaceAcpCommand(deps) : null,
+  });
   deps.store.providers.update(id, {
     lastValidatedAt: new Date().toISOString(),
     lastError: result.ok ? null : (result.error ?? 'unknown error'),
@@ -248,8 +247,11 @@ function hasQwenCliCredentials(): boolean {
   return false;
 }
 
-function hasAcpCredentials(): boolean {
+function hasAcpCredentials(deps: ProvidersHandlerDeps): boolean {
   // The ACP meta-provider delegates to whichever binary is configured.
+  // Treat a workspace override the same way dispatch does: it wins over env
+  // and proves the row is intentionally configured.
+  if (readWorkspaceAcpCommand(deps) !== null) return true;
   // Treat the presence of an override env var as a positive signal; if
   // none is set, fall through to the default gemini path so the row
   // surfaces as "configured" whenever Gemini is signed in.
@@ -290,10 +292,7 @@ function apiKeyHintFor(id: ProviderId): string {
   }
 }
 
-function detectProviderCredentials(
-  id: ProviderId,
-  deps: ProvidersHandlerDeps,
-): boolean {
+function detectProviderCredentials(id: ProviderId, deps: ProvidersHandlerDeps): boolean {
   switch (id) {
     case 'claude-code':
       return deps.providers.hasClaudeCodeCredentials();
@@ -316,12 +315,19 @@ function detectProviderCredentials(
     case 'qwen-cli':
       return hasQwenCliCredentials();
     case 'acp':
-      return hasAcpCredentials();
+      return hasAcpCredentials(deps);
     default: {
       const exhaustive: never = id;
       throw new Error(`unknown provider id: ${String(exhaustive)}`);
     }
   }
+}
+
+function readWorkspaceAcpCommand(deps: ProvidersHandlerDeps): string | null {
+  const value = deps.acpCommand?.get().acpCommand ?? null;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function claudeCodeCredentialsPath(): string {

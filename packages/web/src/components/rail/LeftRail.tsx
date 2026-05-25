@@ -27,7 +27,6 @@ export interface LeftRailProps {
   onOpenCardTemplates?: () => void;
 }
 
-
 function LiveAgentRow({
   issue,
   selected,
@@ -45,7 +44,7 @@ function LiveAgentRow({
         : '';
   const tool = issue.activeRun?.currentTool ?? null;
   const arg = issue.activeRun?.currentArg ?? null;
-  const argTail = arg ? arg.split('/').pop() ?? arg : '';
+  const argTail = arg ? (arg.split('/').pop() ?? arg) : '';
   return (
     <button
       type="button"
@@ -75,12 +74,17 @@ function LiveAgentRow({
 
 function ChatList() {
   const bridge = getBridge();
-  const { data: chats, loading, refetch } = useFetch<ChatConversation[]>(
-    bridge ? 'chats' : null,
-    () => api.listChats(),
-  );
+  const {
+    data: chats,
+    loading,
+    mutate,
+    refetch,
+  } = useFetch<ChatConversation[]>(bridge ? 'chats' : null, () => api.listChats());
   const [filter, setFilter] = useState('');
-  const [expanded, setExpanded] = useState(false);
+  const [openMenu, setOpenMenu] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Poll while mounted so auto-derived titles, renames, and newly created
   // chats from other windows surface here without requiring the user to
@@ -101,6 +105,24 @@ function ChatList() {
     };
   }, [bridge, refetch]);
 
+  useEffect(() => {
+    if (openMenu === null) return;
+    function onPointerDown(e: PointerEvent): void {
+      if (!menuRef.current) return;
+      if (e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      setOpenMenu(null);
+    }
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') setOpenMenu(null);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openMenu]);
+
   const filtered = useMemo(() => {
     const list = chats ?? [];
     const q = filter.trim().toLowerCase();
@@ -108,9 +130,26 @@ function ChatList() {
     return list.filter((c) => c.title.toLowerCase().includes(q));
   }, [chats, filter]);
 
-  const visible = expanded ? filtered : filtered.slice(0, 6);
-
   if (!bridge) return null;
+
+  async function deleteChat(chat: ChatConversation): Promise<void> {
+    setOpenMenu(null);
+    const confirmed = window.confirm(
+      `Delete chat "${chat.title}" permanently? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(chat.id);
+    setDeleteError(null);
+    try {
+      await api.deleteChat(chat.id);
+      mutate((prev) => (prev ?? []).filter((c) => c.id !== chat.id));
+      await refetch();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <CollapsibleSection
@@ -140,50 +179,59 @@ function ChatList() {
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
       />
-      <div className="kb-rail-chats-list">
+      {deleteError ? <div className="kb-rail-chats-error">{deleteError}</div> : null}
+      <div
+        className={`kb-rail-chats-list${openMenu !== null ? ' has-open-menu' : ''}`}
+        ref={menuRef}
+      >
         {loading && (chats === null || chats.length === 0) ? (
           <div className="kb-rail-chats-empty">Loading…</div>
         ) : filtered.length === 0 ? (
-          <div className="kb-rail-chats-empty">
-            {filter ? 'No matches' : 'No chats yet'}
-          </div>
+          <div className="kb-rail-chats-empty">{filter ? 'No matches' : 'No chats yet'}</div>
         ) : (
-          visible.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className="kb-rail-chat-row"
-              title={c.title}
-              onClick={() => {
-                void bridge.openChat?.(c.id);
-                void refetch();
-              }}
-            >
-              <div className="kb-rail-chat-title">{c.title}</div>
-              <div className="kb-rail-chat-time">
-                {ageString(c.lastMessageAt)} ago
-              </div>
-            </button>
+          filtered.map((c) => (
+            <div key={c.id} className={`kb-rail-chat-row${deletingId === c.id ? ' is-busy' : ''}`}>
+              <button
+                type="button"
+                className="kb-rail-chat-main"
+                title={c.title}
+                onClick={() => {
+                  setOpenMenu(null);
+                  void bridge.openChat?.(c.id);
+                  void refetch();
+                }}
+                disabled={deletingId === c.id}
+              >
+                <div className="kb-rail-chat-title">{c.title}</div>
+                <div className="kb-rail-chat-time">{ageString(c.lastMessageAt)} ago</div>
+              </button>
+              <button
+                type="button"
+                className="kb-rail-chat-menu-btn"
+                aria-haspopup="menu"
+                aria-expanded={openMenu === c.id}
+                aria-label={`Actions for ${c.title}`}
+                title="Actions"
+                disabled={deletingId === c.id}
+                onClick={() => setOpenMenu(openMenu === c.id ? null : c.id)}
+              >
+                ⋯
+              </button>
+              {openMenu === c.id ? (
+                <div className="kb-rail-chat-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="kb-rail-chat-menu-item is-destructive"
+                    onClick={() => void deleteChat(c)}
+                  >
+                    Delete chat
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ))
         )}
-        {!expanded && filtered.length > visible.length ? (
-          <button
-            type="button"
-            className="kb-rail-chats-more"
-            onClick={() => setExpanded(true)}
-          >
-            Show {filtered.length - visible.length} more
-          </button>
-        ) : null}
-        {expanded && filtered.length > 6 ? (
-          <button
-            type="button"
-            className="kb-rail-chats-more"
-            onClick={() => setExpanded(false)}
-          >
-            Show less
-          </button>
-        ) : null}
       </div>
     </CollapsibleSection>
   );
@@ -233,16 +281,14 @@ export function LeftRail({
   }
 
   const liveAgents = issues.filter(
-    (i) =>
-      i.agent === 'running' || i.agent === 'blocked' || i.agent === 'review',
+    (i) => i.agent === 'running' || i.agent === 'blocked' || i.agent === 'review',
   );
   const runs = liveAgents.filter((i) => i.agent === 'running').length;
 
   const me: string = authorLogin ?? 'you';
   const meColor = colorForLogin(me);
 
-  const currentFolder =
-    ws.folders.find((f) => f.current) ?? ws.folders[0] ?? null;
+  const currentFolder = ws.folders.find((f) => f.current) ?? ws.folders[0] ?? null;
 
   const headerName = currentFolder?.name ?? ws.workspace.name ?? 'Workspace';
   const headerSubtitle = currentFolder?.branch ?? null;
@@ -255,7 +301,10 @@ export function LeftRail({
         label="Workspace"
         trailing={
           ws.workspace.activeAgents > 0 ? (
-            <span className="kb-rail-label-pulse" aria-label={`${ws.workspace.activeAgents} active agents`}>
+            <span
+              className="kb-rail-label-pulse"
+              aria-label={`${ws.workspace.activeAgents} active agents`}
+            >
               <span className="kb-pulse" />
               {ws.workspace.activeAgents}
             </span>
@@ -312,7 +361,8 @@ export function LeftRail({
             <span className="kb-who-name">{String(me)}</span>
             <span className="kb-who-status">
               <span className="kb-pulse" />
-              {runs} run{runs === 1 ? '' : 's'} · {issues.length} issue{issues.length === 1 ? '' : 's'}
+              {runs} run{runs === 1 ? '' : 's'} · {issues.length} issue
+              {issues.length === 1 ? '' : 's'}
             </span>
           </span>
           <span className="kb-rail-account-caret" aria-hidden>
@@ -336,7 +386,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenArchive)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>📦</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                📦
+              </span>
               Archive
             </button>
             <button
@@ -345,7 +397,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenStats)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>📊</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                📊
+              </span>
               Stats &amp; cost
             </button>
             <div className="kb-rail-account-sep" role="separator" />
@@ -355,7 +409,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenProviders)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>⚡</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                ⚡
+              </span>
               Providers
             </button>
             <button
@@ -364,7 +420,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenCloud)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>☁</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                ☁
+              </span>
               Cloud
             </button>
             <button
@@ -373,7 +431,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenRules)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>📜</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                📜
+              </span>
               House rules
             </button>
             <button
@@ -382,7 +442,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenScripts)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>▸_</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                ▸_
+              </span>
               Repo scripts
             </button>
             <button
@@ -391,7 +453,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenRepos)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>⎘</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                ⎘
+              </span>
               Repos
             </button>
             <button
@@ -400,7 +464,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenCardTemplates)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>◳</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                ◳
+              </span>
               Card templates
             </button>
             <div className="kb-rail-account-sep" role="separator" />
@@ -410,7 +476,9 @@ export function LeftRail({
               className="kb-rail-account-item"
               onClick={() => pick(onOpenSentry)}
             >
-              <span className="kb-rail-account-icon" aria-hidden>⚙</span>
+              <span className="kb-rail-account-icon" aria-hidden>
+                ⚙
+              </span>
               Settings
             </button>
           </div>

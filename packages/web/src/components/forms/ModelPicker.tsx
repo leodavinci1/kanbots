@@ -3,29 +3,31 @@ import { api } from '../../api.js';
 import { useFetch } from '../../hooks/useFetch.js';
 import type { ProviderId } from '../../types.js';
 
-interface ModelEntry {
+export interface ModelEntry {
   id: string;
   label: string;
 }
 
 // Mirror @kanbots/llm catalogue. Keep in sync.
-const MODELS: Record<ProviderId, ModelEntry[]> = {
+export const MODEL_OPTIONS: Record<ProviderId, ModelEntry[]> = {
   'claude-code': [
     { id: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   'codex-cli': [
-    { id: 'gpt-5', label: 'GPT-5' },
-    { id: 'gpt-5-mini', label: 'GPT-5 mini' },
+    { id: 'default', label: 'Codex config default' },
+    { id: 'gpt-5.5', label: 'GPT-5.5' },
+    { id: 'gpt-5.4', label: 'GPT-5.4' },
+    { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
+    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+    { id: 'gpt-5.2', label: 'GPT-5.2' },
   ],
   'gemini-cli': [
     { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
     { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
   ],
-  'amp-cli': [
-    { id: 'default', label: 'Amp (default)' },
-  ],
+  'amp-cli': [{ id: 'default', label: 'Amp (default)' }],
   'cursor-cli': [
     { id: 'auto', label: 'Cursor (auto)' },
     { id: 'sonnet-4.6', label: 'Claude Sonnet 4.6 (Cursor)' },
@@ -45,7 +47,7 @@ const MODELS: Record<ProviderId, ModelEntry[]> = {
   acp: [{ id: 'default', label: 'ACP (configured agent)' }],
 };
 
-const PROVIDER_LABELS: Record<ProviderId, string> = {
+export const PROVIDER_LABELS: Record<ProviderId, string> = {
   'claude-code': 'Claude Code',
   'codex-cli': 'Codex CLI',
   'gemini-cli': 'Gemini CLI',
@@ -58,6 +60,28 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   'qwen-cli': 'Qwen Code',
   acp: 'ACP',
 };
+
+const AGENT_RUN_PROVIDERS: ReadonlySet<ProviderId> = new Set([
+  'claude-code',
+  'codex-cli',
+  'gemini-cli',
+  'amp-cli',
+  'cursor-cli',
+  'copilot-cli',
+  'opencode-cli',
+  'droid-cli',
+  'ccr-cli',
+  'qwen-cli',
+  'acp',
+]);
+
+export function isAgentRunProvider(provider: ProviderId): boolean {
+  return AGENT_RUN_PROVIDERS.has(provider);
+}
+
+export function modelLabel(provider: ProviderId, model: string): string {
+  return MODEL_OPTIONS[provider]?.find((entry) => entry.id === model)?.label ?? model;
+}
 
 export interface ModelPickerValue {
   provider: ProviderId;
@@ -83,22 +107,8 @@ export function ModelPicker({ value, onChange, className, agentRunsOnly }: Model
     if (!providers) return [] as Array<{ provider: ProviderId; models: ModelEntry[] }>;
     return providers.providers
       .filter((p) => p.enabled && p.hasKey)
-      .filter((p) =>
-        agentRunsOnly
-          ? p.id === 'claude-code' ||
-            p.id === 'codex-cli' ||
-            p.id === 'gemini-cli' ||
-            p.id === 'amp-cli' ||
-            p.id === 'cursor-cli' ||
-            p.id === 'copilot-cli' ||
-            p.id === 'opencode-cli' ||
-            p.id === 'droid-cli' ||
-            p.id === 'ccr-cli' ||
-            p.id === 'qwen-cli' ||
-            p.id === 'acp'
-          : true,
-      )
-      .map((p) => ({ provider: p.id, models: MODELS[p.id] ?? [] }));
+      .filter((p) => (agentRunsOnly ? isAgentRunProvider(p.id) : true))
+      .map((p) => ({ provider: p.id, models: MODEL_OPTIONS[p.id] ?? [] }));
   }, [providers, agentRunsOnly]);
 
   // Auto-select first option if value is unset and options become available.

@@ -1,12 +1,6 @@
-import {
-  detectRateLimit as detectRateLimitFromText,
-  type StreamEvent,
-} from '../stream-parser.js';
-import type {
-  AgentCliAdapter,
-  BuildArgsInput,
-  ComposePromptInput,
-} from './types.js';
+import { detectRateLimit as detectRateLimitFromText, type StreamEvent } from '../stream-parser.js';
+import { appendModelArg } from './model.js';
+import type { AgentCliAdapter, BuildArgsInput, ComposePromptInput } from './types.js';
 
 /**
  * Qwen Code CLI adapter. Spawns `qwen-code` and parses its line-delimited
@@ -95,9 +89,7 @@ export const qwenCliAdapter: AgentCliAdapter = {
     // claude's bypass mode. The dispatcher's worktree isolation gives
     // the same trust envelope.
     const args: string[] = ['--yolo', '--output-format', 'json-stream'];
-    if (opts.model) {
-      args.push('--model', opts.model);
-    }
+    appendModelArg(args, '--model', opts.model);
     if (opts.extraArgs && opts.extraArgs.length > 0) {
       args.push(...opts.extraArgs);
     }

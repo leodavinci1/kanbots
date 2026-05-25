@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { issueFixture } from '../helpers/fixtures.js';
 import { makeHandlerTestKit } from '../helpers/make-handlers.js';
 
 describe('cards:resolve', () => {
   it('resolves the card and returns the run', async () => {
-    const { handlers, store } = makeHandlerTestKit();
+    const { handlers, source, store } = makeHandlerTestKit();
+    source.setIssue(issueFixture(1, 'decision task'));
     const t = store.threads.create({ repoOwner: 'octo', repoName: 'hello', issueNumber: 1 });
     const run = store.agentRuns.create({ threadId: t.id });
     store.agentRuns.update(run.id, { status: 'awaiting_input' });
@@ -26,8 +28,6 @@ describe('cards:resolve', () => {
 
   it('throws NotFound for a missing card', async () => {
     const { handlers } = makeHandlerTestKit();
-    await expect(
-      handlers['cards:resolve']({ cardId: 9999, value: 'x' }),
-    ).rejects.toThrow();
+    await expect(handlers['cards:resolve']({ cardId: 9999, value: 'x' })).rejects.toThrow();
   });
 });

@@ -15,11 +15,29 @@ describe('agent-runs:events:subscribe', () => {
     });
   });
 
+  it('accepts chat-scoped subscriptions for desktop routing', async () => {
+    const { handlers, registry, store } = makeHandlerTestKit();
+    const t = store.threads.create({ repoOwner: 'octo', repoName: 'hello', issueNumber: 1 });
+    const run = store.agentRuns.create({ threadId: t.id });
+    registry.next = { subscriptionId: 'sub-chat', runStatus: 'running' };
+
+    const result = await handlers['agent-runs:events:subscribe']({
+      runId: run.id,
+      scope: 'chat',
+    });
+
+    expect(result.subscriptionId).toBe('sub-chat');
+    expect(registry.calls).toContainEqual({
+      kind: 'register',
+      args: { runId: run.id },
+    });
+  });
+
   it('throws NotFound when the run does not exist', async () => {
     const { handlers } = makeHandlerTestKit();
-    await expect(
-      handlers['agent-runs:events:subscribe']({ runId: 9999 }),
-    ).rejects.toMatchObject({ name: 'NotFound' });
+    await expect(handlers['agent-runs:events:subscribe']({ runId: 9999 })).rejects.toMatchObject({
+      name: 'NotFound',
+    });
   });
 });
 

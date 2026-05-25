@@ -25,13 +25,21 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const targetPlatform = args.platform ?? process.platform;
 const targetArch = args.arch ?? process.arch;
+const targetRuntime = args.runtime ?? 'electron';
+
+if (targetRuntime !== 'electron' && targetRuntime !== 'node') {
+  console.error(`[ensure-native] unsupported runtime: ${targetRuntime}`);
+  process.exit(1);
+}
+
+const targetVersion = targetRuntime === 'electron' ? electronVersion : process.versions.node;
 
 function fingerprint() {
   const binHash = existsSync(binPath)
     ? createHash('sha256').update(readFileSync(binPath)).digest('hex')
     : 'missing';
   return [
-    `electron@${electronVersion}`,
+    `${targetRuntime}@${targetVersion}`,
     `better-sqlite3@${sqliteVersion}`,
     targetPlatform,
     targetArch,
@@ -39,14 +47,18 @@ function fingerprint() {
   ].join(' ');
 }
 
-const marker = join(sqliteDir, '.kanbots-electron-rebuild');
+const marker = join(sqliteDir, `.kanbots-${targetRuntime}-rebuild`);
+const markers = [
+  join(sqliteDir, '.kanbots-electron-rebuild'),
+  join(sqliteDir, '.kanbots-node-rebuild'),
+];
 
 if (existsSync(marker) && readFileSync(marker, 'utf-8').trim() === fingerprint()) {
   process.exit(0);
 }
 
 console.log(
-  `[ensure-native] fetching better-sqlite3 prebuild for Electron ${electronVersion} (${targetPlatform}/${targetArch})…`,
+  `[ensure-native] fetching better-sqlite3 prebuild for ${targetRuntime} ${targetVersion} (${targetPlatform}/${targetArch})…`,
 );
 
 // Unlink the existing binary and marker before prebuild-install rewrites them.
@@ -56,7 +68,7 @@ console.log(
 // Breaking the source-side link first keeps prior .app dirs pinned to the OLD
 // inode/content. Without this, packing arm64 then x64 leaves both .apps with the
 // x64 binary because the marker+binary inodes are shared via hard link.
-for (const p of [binPath, marker]) {
+for (const p of [binPath, ...markers]) {
   try {
     unlinkSync(p);
   } catch (e) {
@@ -68,8 +80,8 @@ const result = spawnSync(
   process.execPath,
   [
     prebuildInstall,
-    `--runtime=electron`,
-    `--target=${electronVersion}`,
+    `--runtime=${targetRuntime}`,
+    `--target=${targetVersion}`,
     `--arch=${targetArch}`,
     `--platform=${targetPlatform}`,
   ],
