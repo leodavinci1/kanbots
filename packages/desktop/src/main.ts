@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from 'electron';
 import {
   createAutopilotManager,
+  createReadyToGoManager,
   createChatHandlers,
   createCurator,
   createHandlers,
@@ -15,6 +16,7 @@ import {
   startToolBridge,
   type AgentSupervisor,
   type AutopilotManager,
+  type ReadyToGoManager,
   type ChatHandlers,
   type ChatToolRuntime,
   type DraftIssueFn,
@@ -192,6 +194,7 @@ interface ActiveWorkspace {
   source: IssueSource;
   supervisor: AgentSupervisor;
   autopilot: AutopilotManager;
+  readyToGo: ReadyToGoManager;
   draftIssue: DraftIssueFn;
   suggestIssue: SuggestFeatureFn;
   draftPrDescription: DraftPrDescriptionFn;
@@ -470,6 +473,11 @@ async function closeActiveWorkspace(): Promise<void> {
     // ignore
   }
   try {
+    activeWorkspace.readyToGo.stop();
+  } catch {
+    // ignore
+  }
+  try {
     activeWorkspace.subscriptions.closeAllForOwner(activeWorkspace.ownerId);
   } catch {
     // ignore
@@ -683,6 +691,17 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
   // via chatTools), so we capture a late-bound slot the bridge consults at
   // request time.
   const handlersHolder: { handlers: Handlers | null } = { handlers: null };
+  // Late-bound dispatch for ready-to-go; filled in after handlers are created.
+  const dispatchHolder: { fn: ((n: number) => Promise<void>) | null } = { fn: null };
+  const readyToGo = createReadyToGoManager({
+    store,
+    source,
+    dispatchIssue: (issueNumber) => {
+      if (!dispatchHolder.fn) return Promise.resolve();
+      return dispatchHolder.fn(issueNumber);
+    },
+    onStatusChange: () => broadcastIssueChange(),
+  });
   let toolBridge: ToolBridge | null = null;
   let toolBridgeRuntimeDir: string | null = null;
   let chatTools: ChatToolRuntime | undefined;
@@ -721,6 +740,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
       suggestIssue,
       draftPrDescription,
       autopilot,
+      readyToGo,
       analyzeSentryError,
       sentry: sentryRuntime,
       providers: providersRuntime,
@@ -792,6 +812,8 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
   });
   const unregisterHandlers = registerHandlers(handlers, subscriptions);
   handlersHolder.handlers = handlers;
+  dispatchHolder.fn = (issueNumber) =>
+    handlers['issues:dispatch']({ number: issueNumber, fromStatus: 'todo' }).then(() => undefined);
 
   // Tie subscriptions to the renderer that opened them. When the webContents
   // is destroyed (window closed, render process gone) we drop everything to
@@ -820,6 +842,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
     source,
     supervisor,
     autopilot,
+    readyToGo,
     draftIssue,
     suggestIssue,
     draftPrDescription,

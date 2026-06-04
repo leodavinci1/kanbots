@@ -1,5 +1,6 @@
 import type { Config } from '../../src/handlers/types.js';
 import type { AutopilotManager } from '../../src/autopilot/orchestrator.js';
+import type { ReadyToGoManager } from '../../src/ready-to-go/manager.js';
 import {
   createHandlers,
   type Handlers,
@@ -71,6 +72,16 @@ export function makeHandlerTestKit(
     listActive: () => [],
     stopAllForShutdown: async () => {},
   };
+  const readyToGo: ReadyToGoManager = {
+    start: () => {},
+    stop: () => {},
+    getStatus: () => ({
+      running: false,
+      config: { maxConcurrent: 3, intervalMs: 300_000 },
+      lastTickAt: null,
+      lastDispatchCount: 0,
+    }),
+  };
   const analyzeSentryError = async () => ({
     verdict: 'task' as const,
     confidence: 'medium' as const,
@@ -105,6 +116,7 @@ export function makeHandlerTestKit(
       suggestIssue,
       draftPrDescription,
       autopilot,
+      readyToGo,
       analyzeSentryError,
       sentry,
       providers: {

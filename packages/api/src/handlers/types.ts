@@ -3,6 +3,7 @@ import type { AgentRunProvider } from '@kanbots/dispatcher';
 import type { Store } from '@kanbots/local-store';
 import type { AgentSupervisor } from '../agent-runs/supervisor.js';
 import type { AutopilotManager } from '../autopilot/orchestrator.js';
+import type { ReadyToGoManager } from '../ready-to-go/manager.js';
 import type {
   Config,
   DraftIssueFn,
@@ -87,6 +88,7 @@ export interface HandlerDeps {
    */
   draftPrDescription?: DraftPrDescriptionFn;
   autopilot: AutopilotManager;
+  readyToGo: ReadyToGoManager;
   analyzeSentryError: SentryAnalyzerFn;
   sentry: SentryRuntime;
   providers: ProvidersRuntime;

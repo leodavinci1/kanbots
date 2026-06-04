@@ -19,6 +19,15 @@ export {
   type StartAutopilotResult,
 } from './autopilot/orchestrator.js';
 export {
+  createReadyToGoManager,
+  READY_TO_GO_DEFAULT_INTERVAL_MS,
+  READY_TO_GO_DEFAULT_MAX_CONCURRENT,
+  type ReadyToGoConfig,
+  type ReadyToGoManager,
+  type ReadyToGoManagerOpts,
+  type ReadyToGoStatus,
+} from './ready-to-go/manager.js';
+export {
   reconcileIssueLabels,
   type ReconcileLabelsResult,
 } from './workspace-reconcile.js';

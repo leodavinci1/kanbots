@@ -1265,6 +1265,18 @@ export interface BridgeChannels {
     args: { id: number };
     result: { ok: boolean };
   };
+  'ready-to-go:start': {
+    args: { maxConcurrent?: number; intervalMs?: number };
+    result: ReadyToGoStatusPayload;
+  };
+  'ready-to-go:stop': {
+    args: void;
+    result: ReadyToGoStatusPayload;
+  };
+  'ready-to-go:status': {
+    args: void;
+    result: ReadyToGoStatusPayload;
+  };
 }
 
 /** Per-(persona × model × provider) rollup. Excludes runs without a
@@ -1402,6 +1414,16 @@ export interface ChatPostMessageResult {
   activeRun: AgentRun | null;
   latestRun: AgentRun | null;
   dispatchError?: string;
+}
+
+export interface ReadyToGoStatusPayload {
+  running: boolean;
+  config: {
+    maxConcurrent: number;
+    intervalMs: number;
+  };
+  lastTickAt: string | null;
+  lastDispatchCount: number;
 }
 
 export type ChannelName = keyof BridgeChannels;

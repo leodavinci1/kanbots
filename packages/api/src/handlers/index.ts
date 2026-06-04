@@ -13,6 +13,7 @@ import * as agentRuns from './agent-runs.js';
 import * as analytics from './analytics.js';
 import * as attachments from './attachments.js';
 import * as autopilot from './autopilot.js';
+import * as readyToGo from './ready-to-go.js';
 import * as cardTemplates from './card-templates.js';
 import * as cards from './cards.js';
 import * as chat from './chat.js';
@@ -200,6 +201,9 @@ export function createHandlers(opts: CreateHandlersOptions): Handlers {
     'analytics:time-series': (args) => analytics.timeSeries(deps, args),
     'analytics:frontier': (args) => analytics.frontier(deps, args),
     'analytics:recent-activity': (args) => analytics.recentActivity(deps, args),
+    'ready-to-go:start': (args) => Promise.resolve(readyToGo.readyToGoStart({ readyToGo: deps.readyToGo }, args)),
+    'ready-to-go:stop': () => Promise.resolve(readyToGo.readyToGoStop({ readyToGo: deps.readyToGo })),
+    'ready-to-go:status': () => Promise.resolve(readyToGo.readyToGoGetStatus({ readyToGo: deps.readyToGo })),
   };
   return map;
 }
