@@ -67,9 +67,9 @@ export function createReadyToGoManager(opts: ReadyToGoManagerOpts): ReadyToGoMan
     lastDispatchCount = 0;
 
     try {
-      const activeRuns = store.agentRuns.listActive();
-      const slots = config.maxConcurrent - activeRuns.length;
-      if (slots <= 0) {
+      // Check slots before doing anything expensive
+      const initialActive = store.agentRuns.listActive();
+      if (initialActive.length >= config.maxConcurrent) {
         notify();
         return;
       }
@@ -87,14 +87,16 @@ export function createReadyToGoManager(opts: ReadyToGoManagerOpts): ReadyToGoMan
         return;
       }
 
-      // Skip issues that already have an active run
-      const activeIssueNumbers = new Set(activeRuns.map((r) => r.issueNumber));
-      const candidates = todoIssues.filter(
-        (issue) => !activeIssueNumbers.has(issue.number),
-      );
+      for (const issue of todoIssues) {
+        // Re-check active count before EACH dispatch to respect the limit
+        // even if previous dispatches added runs mid-loop
+        const activeRuns = store.agentRuns.listActive();
+        if (activeRuns.length >= config.maxConcurrent) break;
 
-      const toDispatch = candidates.slice(0, slots);
-      for (const issue of toDispatch) {
+        // Skip if this issue already has an active run
+        const alreadyActive = activeRuns.some((r) => r.issueNumber === issue.number);
+        if (alreadyActive) continue;
+
         try {
           await dispatchIssue(issue.number);
           lastDispatchCount++;
