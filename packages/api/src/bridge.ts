@@ -1277,6 +1277,18 @@ export interface BridgeChannels {
     args: void;
     result: ReadyToGoStatusPayload;
   };
+  'auto-review:start': {
+    args: { maxConcurrent?: number; intervalMs?: number };
+    result: AutoReviewStatusPayload;
+  };
+  'auto-review:stop': {
+    args: void;
+    result: AutoReviewStatusPayload;
+  };
+  'auto-review:status': {
+    args: void;
+    result: AutoReviewStatusPayload;
+  };
 }
 
 /** Per-(persona × model × provider) rollup. Excludes runs without a
@@ -1418,12 +1430,17 @@ export interface ChatPostMessageResult {
 
 export interface ReadyToGoStatusPayload {
   running: boolean;
-  config: {
-    maxConcurrent: number;
-    intervalMs: number;
-  };
+  config: { maxConcurrent: number; intervalMs: number };
   lastTickAt: string | null;
   lastDispatchCount: number;
+}
+
+export interface AutoReviewStatusPayload {
+  running: boolean;
+  config: { maxConcurrent: number; intervalMs: number };
+  lastTickAt: string | null;
+  lastReviewedCount: number;
+  activeIssues: number[];
 }
 
 export type ChannelName = keyof BridgeChannels;

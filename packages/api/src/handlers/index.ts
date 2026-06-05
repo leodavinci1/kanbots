@@ -14,6 +14,7 @@ import * as analytics from './analytics.js';
 import * as attachments from './attachments.js';
 import * as autopilot from './autopilot.js';
 import * as readyToGo from './ready-to-go.js';
+import * as autoReviewHandlers from './auto-review.js';
 import * as cardTemplates from './card-templates.js';
 import * as cards from './cards.js';
 import * as chat from './chat.js';
@@ -204,6 +205,9 @@ export function createHandlers(opts: CreateHandlersOptions): Handlers {
     'ready-to-go:start': (args) => Promise.resolve(readyToGo.readyToGoStart({ readyToGo: deps.readyToGo }, args)),
     'ready-to-go:stop': () => Promise.resolve(readyToGo.readyToGoStop({ readyToGo: deps.readyToGo })),
     'ready-to-go:status': () => Promise.resolve(readyToGo.readyToGoGetStatus({ readyToGo: deps.readyToGo })),
+    'auto-review:start': (args) => Promise.resolve(autoReviewHandlers.autoReviewStart({ autoReview: deps.autoReview }, args)),
+    'auto-review:stop': () => Promise.resolve(autoReviewHandlers.autoReviewStop({ autoReview: deps.autoReview })),
+    'auto-review:status': () => Promise.resolve(autoReviewHandlers.autoReviewGetStatus({ autoReview: deps.autoReview })),
   };
   return map;
 }

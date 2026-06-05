@@ -1,6 +1,7 @@
 import type { Config } from '../../src/handlers/types.js';
 import type { AutopilotManager } from '../../src/autopilot/orchestrator.js';
 import type { ReadyToGoManager } from '../../src/ready-to-go/manager.js';
+import type { AutoReviewManager } from '../../src/auto-review/manager.js';
 import {
   createHandlers,
   type Handlers,
@@ -75,12 +76,12 @@ export function makeHandlerTestKit(
   const readyToGo: ReadyToGoManager = {
     start: () => {},
     stop: () => {},
-    getStatus: () => ({
-      running: false,
-      config: { maxConcurrent: 3, intervalMs: 300_000 },
-      lastTickAt: null,
-      lastDispatchCount: 0,
-    }),
+    getStatus: () => ({ running: false, config: { maxConcurrent: 3, intervalMs: 300_000 }, lastTickAt: null, lastDispatchCount: 0 }),
+  };
+  const autoReview: AutoReviewManager = {
+    start: () => {},
+    stop: () => {},
+    getStatus: () => ({ running: false, config: { maxConcurrent: 2, intervalMs: 300_000 }, lastTickAt: null, lastReviewedCount: 0, activeIssues: [] }),
   };
   const analyzeSentryError = async () => ({
     verdict: 'task' as const,
@@ -117,6 +118,7 @@ export function makeHandlerTestKit(
       draftPrDescription,
       autopilot,
       readyToGo,
+      autoReview,
       analyzeSentryError,
       sentry,
       providers: {

@@ -28,6 +28,15 @@ export {
   type ReadyToGoStatus,
 } from './ready-to-go/manager.js';
 export {
+  createAutoReviewManager,
+  AUTO_REVIEW_DEFAULT_INTERVAL_MS,
+  AUTO_REVIEW_DEFAULT_MAX_CONCURRENT,
+  type AutoReviewConfig,
+  type AutoReviewManager,
+  type AutoReviewManagerOpts,
+  type AutoReviewStatus,
+} from './auto-review/manager.js';
+export {
   reconcileIssueLabels,
   type ReconcileLabelsResult,
 } from './workspace-reconcile.js';

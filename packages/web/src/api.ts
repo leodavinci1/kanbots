@@ -1072,4 +1072,8 @@ export const api = {
     invoke('ready-to-go:start', input),
   readyToGoStop: () => invoke('ready-to-go:stop', undefined),
   readyToGoStatus: () => invoke('ready-to-go:status', undefined),
+  autoReviewStart: (input: { maxConcurrent?: number; intervalMs?: number }) =>
+    invoke('auto-review:start', input),
+  autoReviewStop: () => invoke('auto-review:stop', undefined),
+  autoReviewStatus: () => invoke('auto-review:status', undefined),
 } as const;

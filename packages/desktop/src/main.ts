@@ -7,6 +7,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from '
 import {
   createAutopilotManager,
   createReadyToGoManager,
+  createAutoReviewManager,
   createChatHandlers,
   createCurator,
   createHandlers,
@@ -17,6 +18,7 @@ import {
   type AgentSupervisor,
   type AutopilotManager,
   type ReadyToGoManager,
+  type AutoReviewManager,
   type ChatHandlers,
   type ChatToolRuntime,
   type DraftIssueFn,
@@ -195,6 +197,7 @@ interface ActiveWorkspace {
   supervisor: AgentSupervisor;
   autopilot: AutopilotManager;
   readyToGo: ReadyToGoManager;
+  autoReview: AutoReviewManager;
   draftIssue: DraftIssueFn;
   suggestIssue: SuggestFeatureFn;
   draftPrDescription: DraftPrDescriptionFn;
@@ -478,6 +481,11 @@ async function closeActiveWorkspace(): Promise<void> {
     // ignore
   }
   try {
+    activeWorkspace.autoReview.stop();
+  } catch {
+    // ignore
+  }
+  try {
     activeWorkspace.subscriptions.closeAllForOwner(activeWorkspace.ownerId);
   } catch {
     // ignore
@@ -691,14 +699,39 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
   // via chatTools), so we capture a late-bound slot the bridge consults at
   // request time.
   const handlersHolder: { handlers: Handlers | null } = { handlers: null };
-  // Late-bound dispatch for ready-to-go; filled in after handlers are created.
   const dispatchHolder: { fn: ((n: number) => Promise<void>) | null } = { fn: null };
+
   const readyToGo = createReadyToGoManager({
     store,
     source,
     dispatchIssue: (issueNumber) => {
       if (!dispatchHolder.fn) return Promise.resolve();
       return dispatchHolder.fn(issueNumber);
+    },
+    onStatusChange: () => broadcastIssueChange(),
+  });
+
+  const autoReview = createAutoReviewManager({
+    store,
+    source,
+    supervisor,
+    startReviewer: async (issueNumber, threadId) => {
+      const h = handlersHolder.handlers;
+      if (!h) throw new Error('handlers not ready');
+      const run = await h['issues:reviewer']({ number: issueNumber, threadId });
+      return run.id;
+    },
+    dispatchFix: async (issueNumber, reviewText) => {
+      const h = handlersHolder.handlers;
+      if (!h) throw new Error('handlers not ready');
+      const result = await h['issues:post-message']({
+        number: issueNumber,
+        body: `Auto-review completed. Please fix the following issues:\n\n${reviewText}`,
+        dispatch: true,
+      });
+      const run = result.activeRun ?? result.latestRun;
+      if (!run) throw new Error('no run started for fix dispatch');
+      return run.id;
     },
     onStatusChange: () => broadcastIssueChange(),
   });
@@ -741,6 +774,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
       draftPrDescription,
       autopilot,
       readyToGo,
+      autoReview,
       analyzeSentryError,
       sentry: sentryRuntime,
       providers: providersRuntime,
@@ -843,6 +877,7 @@ async function openWorkspaceInternal(repoPath: string): Promise<ActiveWorkspaceI
     supervisor,
     autopilot,
     readyToGo,
+    autoReview,
     draftIssue,
     suggestIssue,
     draftPrDescription,

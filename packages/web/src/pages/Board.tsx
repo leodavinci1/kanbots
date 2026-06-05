@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from
 import { api } from '../api.js';
 import { AutopilotLaunchModal } from '../components/modals/AutopilotLaunchModal.js';
 import { ReadyToGoModal } from '../components/modals/ReadyToGoModal.js';
+import { AutoReviewModal } from '../components/modals/AutoReviewModal.js';
 import { BoardViewsModal } from '../components/modals/BoardViewsModal.js';
 import { BoardErrorBanner } from '../components/board/BoardErrorBanner.js';
 import { BoardFilters } from '../components/board/BoardFilters.js';
@@ -175,6 +176,8 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette, onOpenStats }
   const [autopilotLaunchOpen, setAutopilotLaunchOpen] = useState(false);
   const [readyToGoOpen, setReadyToGoOpen] = useState(false);
   const [readyToGoActive, setReadyToGoActive] = useState(false);
+  const [autoReviewOpen, setAutoReviewOpen] = useState(false);
+  const [autoReviewActive, setAutoReviewActive] = useState(false);
   const [selectedNumber, setSelectedNumber] = useSelection();
   const [bulkBusy, setBulkBusy] = useState(false);
   const [manageViewsOpen, setManageViewsOpen] = useState(false);
@@ -242,9 +245,9 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette, onOpenStats }
     };
   }, [suggesting]);
 
-  // Sync ready-to-go active state on mount
   useEffect(() => {
     void api.readyToGoStatus().then((s) => setReadyToGoActive(s.running)).catch(() => {});
+    void api.autoReviewStatus().then((s) => setAutoReviewActive(s.running)).catch(() => {});
   }, []);
 
   // Memoised before the loading/error guards so the hook order stays
@@ -620,6 +623,8 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette, onOpenStats }
         onOpenAutopilot={() => setAutopilotLaunchOpen(true)}
         onOpenReadyToGo={() => setReadyToGoOpen(true)}
         readyToGoActive={readyToGoActive}
+        onOpenAutoReview={() => setAutoReviewOpen(true)}
+        autoReviewActive={autoReviewActive}
         onCreate={onOpenCreate}
         // null while the first fetch is in flight so the meter shows its
         // placeholder; once loaded it lights up in the clay accent when
@@ -706,6 +711,14 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette, onOpenStats }
           onClose={() => {
             setReadyToGoOpen(false);
             void api.readyToGoStatus().then((s) => setReadyToGoActive(s.running)).catch(() => {});
+          }}
+        />
+      ) : null}
+      {autoReviewOpen ? (
+        <AutoReviewModal
+          onClose={() => {
+            setAutoReviewOpen(false);
+            void api.autoReviewStatus().then((s) => setAutoReviewActive(s.running)).catch(() => {});
           }}
         />
       ) : null}

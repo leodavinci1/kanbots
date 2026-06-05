@@ -23,6 +23,7 @@ export const AGENT_LABELS = {
   blocked: { name: 'agent:blocked', color: 'd93f0b', description: 'Agent waiting on user' },
   review: { name: 'agent:review', color: '0e8a16', description: 'PR open for review' },
   failed: { name: 'agent:failed', color: 'b60205', description: 'Agent failed' },
+  autoReviewed: { name: 'agent:auto-reviewed', color: '1d76db', description: 'Auto-reviewed and fixed by agent' },
 } as const satisfies Record<string, Label>;
 
 export type StatusKey = keyof typeof STATUS_LABELS;

@@ -7,6 +7,8 @@ export interface BoardToolbarProps {
   onOpenAutopilot?: (() => void) | undefined;
   onOpenReadyToGo?: (() => void) | undefined;
   readyToGoActive?: boolean | undefined;
+  onOpenAutoReview?: (() => void) | undefined;
+  autoReviewActive?: boolean | undefined;
   onCreate?: (() => void) | undefined;
   createLabel?: string | undefined;
   createKbd?: string | undefined;
@@ -62,6 +64,8 @@ export function BoardToolbar({
   onOpenAutopilot,
   onOpenReadyToGo,
   readyToGoActive = false,
+  onOpenAutoReview,
+  autoReviewActive = false,
   onCreate,
   createLabel = 'New task',
   createKbd = 'N',
@@ -100,20 +104,21 @@ export function BoardToolbar({
           style={{ position: 'relative' }}
         >
           {readyToGoActive ? (
-            <span
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 4,
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: 'var(--accent)',
-              }}
-              aria-label="active"
-            />
+            <span style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
           ) : null}
           Ready to go
+        </button>
+        <button
+          type="button"
+          className="kb-btn ghost"
+          onClick={() => onOpenAutoReview?.()}
+          title="Auto-review cards in the review column"
+          style={{ position: 'relative' }}
+        >
+          {autoReviewActive ? (
+            <span style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
+          ) : null}
+          Auto review
         </button>
         <button
           type="button"
