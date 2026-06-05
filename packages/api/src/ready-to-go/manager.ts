@@ -98,25 +98,21 @@ export function createReadyToGoManager(opts: ReadyToGoManagerOpts): ReadyToGoMan
         if (alreadyActive) continue;
 
         try {
-          // Move to in-progress before dispatching (same as dragging in the GUI)
+          // Dispatch first — only update labels if it succeeds
+          await dispatchIssue(issue.number);
+          // Move to in-progress after successful dispatch
           const updatedLabels = withAgentLabel(
             withStatusLabel(issue.labels, 'inProgress'),
             'running',
           );
           await source.updateIssue(issue.number, { labels: updatedLabels });
-          await dispatchIssue(issue.number);
           lastDispatchCount++;
         } catch (err) {
-          // Already active or other transient error — revert label and skip
+          // Already active or other transient error — labels untouched
           console.warn(
             `[ready-to-go] skipped issue #${issue.number}:`,
             err instanceof Error ? err.message : String(err),
           );
-          try {
-            await source.updateIssue(issue.number, { labels: issue.labels });
-          } catch {
-            // best-effort revert
-          }
         }
       }
     } catch (err) {
