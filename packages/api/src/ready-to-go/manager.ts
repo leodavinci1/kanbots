@@ -1,4 +1,4 @@
-import { statusFromLabels } from '@kanbots/core';
+import { statusFromLabels, withStatusLabel, withAgentLabel } from '@kanbots/core';
 import type { IssueSource } from '@kanbots/core';
 import type { Store } from '@kanbots/local-store';
 
@@ -98,14 +98,25 @@ export function createReadyToGoManager(opts: ReadyToGoManagerOpts): ReadyToGoMan
         if (alreadyActive) continue;
 
         try {
+          // Move to in-progress before dispatching (same as dragging in the GUI)
+          const updatedLabels = withAgentLabel(
+            withStatusLabel(issue.labels, 'inProgress'),
+            'running',
+          );
+          await source.updateIssue(issue.number, { labels: updatedLabels });
           await dispatchIssue(issue.number);
           lastDispatchCount++;
         } catch (err) {
-          // Already active or other transient error — skip this issue
+          // Already active or other transient error — revert label and skip
           console.warn(
             `[ready-to-go] skipped issue #${issue.number}:`,
             err instanceof Error ? err.message : String(err),
           );
+          try {
+            await source.updateIssue(issue.number, { labels: issue.labels });
+          } catch {
+            // best-effort revert
+          }
         }
       }
     } catch (err) {
