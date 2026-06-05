@@ -1068,4 +1068,8 @@ export const api = {
     }
     return invoke('issue-relations:remove', { id });
   },
+  readyToGoStart: (input: { maxConcurrent?: number; intervalMs?: number }) =>
+    invoke('ready-to-go:start', input),
+  readyToGoStop: () => invoke('ready-to-go:stop', undefined),
+  readyToGoStatus: () => invoke('ready-to-go:status', undefined),
 } as const;

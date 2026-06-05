@@ -5,6 +5,8 @@ export interface BoardToolbarProps {
   crumbs: ReactNode;
   onOpenPalette?: (() => void) | undefined;
   onOpenAutopilot?: (() => void) | undefined;
+  onOpenReadyToGo?: (() => void) | undefined;
+  readyToGoActive?: boolean | undefined;
   onCreate?: (() => void) | undefined;
   createLabel?: string | undefined;
   createKbd?: string | undefined;
@@ -58,6 +60,8 @@ export function BoardToolbar({
   crumbs,
   onOpenPalette,
   onOpenAutopilot,
+  onOpenReadyToGo,
+  readyToGoActive = false,
   onCreate,
   createLabel = 'New task',
   createKbd = 'N',
@@ -88,6 +92,29 @@ export function BoardToolbar({
         {showCostMeter ? (
           <WorkspaceCostMeter totalUsd={costTodayUsd} onClick={onOpenCostMeter} />
         ) : null}
+        <button
+          type="button"
+          className="kb-btn ghost"
+          onClick={() => onOpenReadyToGo?.()}
+          title="Auto-dispatch todo tasks on a timer"
+          style={{ position: 'relative' }}
+        >
+          {readyToGoActive ? (
+            <span
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--accent)',
+              }}
+              aria-label="active"
+            />
+          ) : null}
+          Ready to go
+        </button>
         <button
           type="button"
           className="kb-btn ghost"
