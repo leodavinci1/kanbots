@@ -13,6 +13,8 @@ export interface BoardToolbarProps {
   autopilotDisabledTitle?: string | undefined;
   /** Extra trailing action buttons — used by cloud mode for "Refresh" / "Switch workspace". */
   trailingActions?: ReactNode;
+  /** Local-mode refresh of the open-issues list (GitHub / gh creates). */
+  onRefresh?: (() => void) | undefined;
   /** Workspace-wide cost since midnight (sum of run totalCostUsd). Null
    *  while the first fetch is in flight; the meter dims to a placeholder
    *  rather than flashing "$0.00". Omit entirely to hide the meter. */
@@ -64,6 +66,7 @@ export function BoardToolbar({
   autopilotDisabled = false,
   autopilotDisabledTitle,
   trailingActions,
+  onRefresh,
   costTodayUsd,
   onOpenCostMeter,
 }: BoardToolbarProps) {
@@ -87,6 +90,17 @@ export function BoardToolbar({
         </button>
         {showCostMeter ? (
           <WorkspaceCostMeter totalUsd={costTodayUsd} onClick={onOpenCostMeter} />
+        ) : null}
+        {onRefresh ? (
+          <button
+            type="button"
+            className="kb-btn ghost"
+            onClick={() => onRefresh()}
+            title="Reload open issues from GitHub"
+            aria-label="Refresh board"
+          >
+            Refresh
+          </button>
         ) : null}
         <button
           type="button"

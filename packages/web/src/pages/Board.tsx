@@ -116,7 +116,7 @@ export interface BoardProps {
 
 export function Board({ onOpenDetail, onOpenCreate, onOpenPalette, onOpenStats }: BoardProps = {}) {
   const { data: config } = useFetch('config', () => api.config());
-  const { issues, loading, error, mutate } = useIssues();
+  const { issues, loading, error, mutate, refetch } = useIssues();
   const { data: costToday, refetch: refetchCostToday } = useFetch('cost:today', () =>
     api.costToday(),
   );
@@ -611,6 +611,7 @@ export function Board({ onOpenDetail, onOpenCreate, onOpenPalette, onOpenStats }
         onOpenPalette={onOpenPalette}
         onOpenAutopilot={() => setAutopilotLaunchOpen(true)}
         onCreate={onOpenCreate}
+        onRefresh={() => void refetch()}
         // null while the first fetch is in flight so the meter shows its
         // placeholder; once loaded it lights up in the clay accent when
         // any spend has accumulated this calendar day.
