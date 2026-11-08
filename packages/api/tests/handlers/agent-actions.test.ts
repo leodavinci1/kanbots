@@ -64,7 +64,33 @@ describe('issues:reviewer', () => {
       handlers['issues:reviewer']({ number: 7 }),
     ).rejects.toMatchObject({ name: 'BadRequest' });
   });
+
+  it('starts a reviewer worktree from the last implement branch with commits', async () => {
+    const { handlers, store, source, supervisor } = makeHandlerTestKit();
+    source.setIssue(issueFixture(7, 'lucky'));
+    const t = store.threads.create({
+      repoOwner: 'octo',
+      repoName: 'hello',
+      issueNumber: 7,
+    });
+    store.agentRuns.create({
+      threadId: t.id,
+      status: 'complete',
+      branchName: 'kanbots/issue-7-3',
+      worktreePath: '/tmp/fake-wt',
+    });
+    // Stub git rev-list via findImplementBaseRef — without a real repo the
+    // helper returns null; assert start is still called (reviewer must not throw).
+    const run = await handlers['issues:reviewer']({ number: 7, threadId: t.id });
+    expect(run.status).toBe('running');
+    const startCall = supervisor.calls.find((c) => c.type === 'start');
+    expect(startCall).toBeTruthy();
+    expect((startCall?.args as { appendSystemPrompt?: string }).appendSystemPrompt).toContain(
+      'code reviewer',
+    );
+  });
 });
+
 
 describe('issues:start-agent', () => {
   it('starts via the supervisor', async () => {

@@ -138,6 +138,12 @@ export interface StartRunInput {
    * drag-to-inProgress, autopilot children).
    */
   chatSessionId?: number;
+  /**
+   * Git ref to base the new worktree branch on (e.g. a prior implement
+   * branch). When omitted, `git worktree add -b` uses the repo's current
+   * HEAD — usually `main`, which makes reviewer runs see an empty diff.
+   */
+  baseRef?: string;
 }
 
 export interface ResumeRunInput {
@@ -996,7 +1002,12 @@ export async function createSupervisor(
 
     try {
       await prepareDir(worktreePath);
-      await makeWorktree({ repoPath, branch, worktreePath });
+      await makeWorktree({
+        repoPath,
+        branch,
+        worktreePath,
+        ...(input.baseRef !== undefined ? { baseRef: input.baseRef } : {}),
+      });
       await stampIdentity({
         worktreePath,
         runId: run.id,
