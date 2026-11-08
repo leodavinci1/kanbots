@@ -1,5 +1,6 @@
 import {
   detectRateLimit as detectRateLimitFromText,
+  extractTextEvents,
   type StreamEvent,
 } from '../stream-parser.js';
 import type {
@@ -183,7 +184,9 @@ function mapEvent(ev: CursorEvent): StreamEvent[] {
       const out: StreamEvent[] = [];
       for (const item of content) {
         if (item.type === 'text' && typeof item.text === 'string' && item.text.length > 0) {
-          out.push({ kind: 'text', text: item.text });
+          // Parity with claude/codex: turn ```kanbots-decision``` fences into
+          // decision events so the UI shows option buttons instead of raw JSON.
+          out.push(...extractTextEvents(item.text));
         }
       }
       return out;
