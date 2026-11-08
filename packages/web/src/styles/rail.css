@@ -871,6 +871,10 @@
 .kb-rail-foot {
   position: relative;
   margin-top: auto;
+  flex-shrink: 0;
+  z-index: 5;
+  background: var(--bg);
+  isolation: isolate;
   padding: 12px;
   border-top: 1px solid var(--hairline-soft);
   display: flex;
@@ -1024,12 +1028,15 @@
 
 /* ---------- Activity section ---------- */
 .kb-rail-activity {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 .kb-rail-activity-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
 }
 .kb-rail-activity-error {
   color: oklch(0.7 0.18 25);
@@ -1098,6 +1105,20 @@
 }
 
 /* ---------- Chats section ---------- */
+/* Clip instead of painting over .kb-rail-foot when the rail is short. */
+.kb-rail-activity.kb-rail-collapsible,
+.kb-rail-chats.kb-rail-collapsible {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.kb-rail-activity.kb-rail-collapsible > .kb-rail-section-body,
+.kb-rail-chats.kb-rail-collapsible > .kb-rail-section-body {
+  min-height: 0;
+  overflow-y: auto;
+}
 .kb-rail-chats {
   display: flex;
   flex-direction: column;
