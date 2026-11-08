@@ -24,6 +24,7 @@ import {
   locateBaseCheckout,
   runGit,
 } from './agent-runs.js';
+import { findImplementBaseRef } from './agent-actions.js';
 import type { HandlerDeps } from './types.js';
 import { badRequest, notFound, parseArgs } from './errors.js';
 
@@ -100,7 +101,23 @@ async function resolveRun(
   );
   if (!thread) throw notFound(`no thread for issue #${issueNumber}`);
   const active = deps.store.agentRuns.findActiveForThread(thread.id);
-  const run = active ?? deps.store.agentRuns.findLatestForThread(thread.id);
+  if (active) return { run: active, repoPath };
+
+  // Prefer the last implement branch with commits ahead of main — not the
+  // latest run, which is often an empty /review sibling worktree.
+  const implementBranch = await findImplementBaseRef(
+    deps.store,
+    thread.id,
+    repoPath,
+  );
+  if (implementBranch !== null) {
+    const match = deps.store.agentRuns
+      .listByThread(thread.id)
+      .find((r) => r.branchName === implementBranch);
+    if (match) return { run: match, repoPath };
+  }
+
+  const run = deps.store.agentRuns.findLatestForThread(thread.id);
   if (!run) throw notFound(`no agent runs for issue #${issueNumber}`);
   return { run, repoPath };
 }
