@@ -741,7 +741,9 @@ function buildDispatchKickoff(
 
 CONTEXT: ${context}
 
-Proceed directly — do not emit a kanbots-decision asking how to approach. Investigate the codebase, make the change, run any checks you have available (prefer ./scripts/verify.sh when present), commit on this branch, and finish when the task is complete. Only emit a kanbots-decision mid-run if a true blocker needs a human choice.`;
+Proceed directly — do not emit a kanbots-decision asking how to approach. Investigate the codebase, make the change, run any checks you have available (prefer ./scripts/verify.sh when present), commit on this branch, and finish when the task is complete. Only emit a kanbots-decision mid-run if a true blocker needs a human choice.
+
+Do not leave long-running processes (npm run dev, tsx watch, servers, watchers) attached to this turn — they never exit and the run hangs as "running". Stop them before claiming done; use one-shot checks or the app Preview instead.`;
 }
 
 function dispatchSummary(
