@@ -229,6 +229,19 @@
   border-bottom: 1px solid var(--hairline-soft);
   background: var(--bg);
   font-size: 12px;
+  /* Keep overflow visible so .kb-board-views-menu can paint over the usage row.
+     Horizontal scroll lives on .kb-filter-pills instead — overflow-x:auto here
+     forces overflow-y to clip absolute dropdowns. */
+  overflow: visible;
+  position: relative;
+  z-index: 20;
+}
+.kb-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
 }
 .kb-pill {
@@ -315,6 +328,9 @@
 .kb-usage-row {
   height: 30px;
   flex-shrink: 0;
+  /* Stay under filter-row menus (views dropdown). */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1131,12 +1147,14 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
+  z-index: 30;
 }
 .kb-board-views-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 30;
+  z-index: 40;
   min-width: 220px;
   background: var(--bg-1);
   border: 1px solid var(--hairline);

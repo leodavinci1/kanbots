@@ -67,82 +67,84 @@ export function BoardFilters({ stats, controls }: BoardFiltersProps) {
     (controls.hasAgent || controls.priorities.size > 0 || controls.areas.size > 0);
   return (
     <div className="kb-filter-row">
-      <span className="kb-pill on" title="Only open issues are loaded">
-        <span className="kb-pill-x" />
-        Open
-      </span>
-      {controls !== null ? (
-        <>
-          {controls.backlogCount > 0 || controls.includeBacklog ? (
+      <div className="kb-filter-pills">
+        <span className="kb-pill on" title="Only open issues are loaded">
+          <span className="kb-pill-x" />
+          Open
+        </span>
+        {controls !== null ? (
+          <>
+            {controls.backlogCount > 0 || controls.includeBacklog ? (
+              <button
+                type="button"
+                className={`kb-pill${controls.includeBacklog ? ' on' : ''}`}
+                onClick={controls.onToggleIncludeBacklog}
+                aria-pressed={controls.includeBacklog}
+                title={
+                  controls.includeBacklog
+                    ? 'Click to hide the Backlog column'
+                    : `Click to show the Backlog column (${controls.backlogCount} hidden)`
+                }
+              >
+                {controls.includeBacklog ? <span className="kb-pill-x" /> : null}
+                {controls.includeBacklog
+                  ? 'Backlog'
+                  : `Backlog (${controls.backlogCount})`}
+              </button>
+            ) : null}
             <button
               type="button"
-              className={`kb-pill${controls.includeBacklog ? ' on' : ''}`}
-              onClick={controls.onToggleIncludeBacklog}
-              aria-pressed={controls.includeBacklog}
-              title={
-                controls.includeBacklog
-                  ? 'Click to hide the Backlog column'
-                  : `Click to show the Backlog column (${controls.backlogCount} hidden)`
-              }
+              className={`kb-pill${controls.hasAgent ? ' on kb-pill-running' : ''}`}
+              onClick={controls.onToggleHasAgent}
+              aria-pressed={controls.hasAgent}
             >
-              {controls.includeBacklog ? <span className="kb-pill-x" /> : null}
-              {controls.includeBacklog
-                ? 'Backlog'
-                : `Backlog (${controls.backlogCount})`}
+              {controls.hasAgent ? <span className="kb-pill-x" /> : null}
+              Has agent
             </button>
-          ) : null}
-          <button
-            type="button"
-            className={`kb-pill${controls.hasAgent ? ' on kb-pill-running' : ''}`}
-            onClick={controls.onToggleHasAgent}
-            aria-pressed={controls.hasAgent}
-          >
-            {controls.hasAgent ? <span className="kb-pill-x" /> : null}
-            Has agent
-          </button>
-          {controls.availablePriorities.map((p) => {
-            const on = controls.priorities.has(p);
-            return (
+            {controls.availablePriorities.map((p) => {
+              const on = controls.priorities.has(p);
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  className={`kb-pill${on ? ' on' : ''}`}
+                  onClick={() => controls.onTogglePriority(p)}
+                  aria-pressed={on}
+                >
+                  {on ? <span className="kb-pill-x" /> : null}
+                  priority:{p}
+                </button>
+              );
+            })}
+            {controls.availableAreas.slice(0, 4).map((area) => {
+              const on = controls.areas.has(area);
+              return (
+                <button
+                  key={area}
+                  type="button"
+                  className={`kb-pill${on ? ' on' : ''}`}
+                  onClick={() => controls.onToggleArea(area)}
+                  aria-pressed={on}
+                >
+                  {on ? <span className="kb-pill-x" /> : null}
+                  {area}
+                </button>
+              );
+            })}
+            {anyOn ? (
               <button
-                key={p}
                 type="button"
-                className={`kb-pill${on ? ' on' : ''}`}
-                onClick={() => controls.onTogglePriority(p)}
-                aria-pressed={on}
+                className="kb-pill"
+                onClick={controls.onClear}
+                title="Clear filters"
+                style={{ color: 'var(--ink-3)' }}
               >
-                {on ? <span className="kb-pill-x" /> : null}
-                priority:{p}
+                clear
               </button>
-            );
-          })}
-          {controls.availableAreas.slice(0, 4).map((area) => {
-            const on = controls.areas.has(area);
-            return (
-              <button
-                key={area}
-                type="button"
-                className={`kb-pill${on ? ' on' : ''}`}
-                onClick={() => controls.onToggleArea(area)}
-                aria-pressed={on}
-              >
-                {on ? <span className="kb-pill-x" /> : null}
-                {area}
-              </button>
-            );
-          })}
-          {anyOn ? (
-            <button
-              type="button"
-              className="kb-pill"
-              onClick={controls.onClear}
-              title="Clear filters"
-              style={{ color: 'var(--ink-3)' }}
-            >
-              clear
-            </button>
-          ) : null}
-        </>
-      ) : null}
+            ) : null}
+          </>
+        ) : null}
+      </div>
       {controls !== null && controls.views ? <ViewsDropdown views={controls.views} /> : null}
       {controls !== null ? (
         <label
