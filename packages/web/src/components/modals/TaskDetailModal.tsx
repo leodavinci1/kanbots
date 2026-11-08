@@ -641,6 +641,20 @@ function ReplyFooter({
     setSending(true);
     setError(null);
     try {
+      // /review is orchestration — spawn reviewer on the last implement
+      // branch. Posting it as a normal message creates a fresh main worktree
+      // and the Diff tab goes empty.
+      const reviewMatch = trimmed.match(/^\/review(?:\s+(.*))?$/is);
+      if (reviewMatch) {
+        const extra = (reviewMatch[1] ?? '').trim();
+        await api.spawnReviewer(issueNumber, {
+          ...(focusedRepoId !== null ? { repoId: focusedRepoId } : {}),
+          ...(extra.length > 0 ? { prompt: extra } : {}),
+        });
+        setBody('');
+        onSent();
+        return;
+      }
       let messageBody = trimmed;
       // Consume any pending inline review comments and prepend them as a
       // structured block so the agent sees them as context.

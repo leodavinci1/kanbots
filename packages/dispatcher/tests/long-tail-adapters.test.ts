@@ -49,7 +49,17 @@ describe('cursorCliAdapter', () => {
         call_id: 'tc-1',
         tool_call: { readToolCall: { args: {}, result: 'hello' } },
       }),
-      JSON.stringify({ type: 'result', is_error: false, duration_ms: 1234 }),
+      JSON.stringify({
+        type: 'result',
+        is_error: false,
+        duration_ms: 1234,
+        usage: {
+          inputTokens: 1000,
+          outputTokens: 50,
+          cacheReadTokens: 200,
+          reasoningTokens: 10,
+        },
+      }),
     ];
     const events = feed(lines, (l) => cursorCliAdapter.parseLine(l));
     expect(events.map((e) => e.kind)).toEqual([
@@ -64,6 +74,15 @@ describe('cursorCliAdapter', () => {
     if (toolUse?.kind === 'tool_use') {
       expect(toolUse.name).toBe('Read');
       expect(toolUse.toolUseId).toBe('tc-1');
+    }
+    const result = events[4];
+    expect(result?.kind).toBe('result');
+    if (result?.kind === 'result') {
+      expect(result.tokenUsage).toEqual({
+        input: 1000,
+        output: 60,
+        cachedInput: 200,
+      });
     }
   });
 

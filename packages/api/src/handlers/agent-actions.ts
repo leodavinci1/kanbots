@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Issue } from '@kanbots/core';
 import type { AgentRun, Store } from '@kanbots/local-store';
 import { z } from 'zod';
@@ -6,11 +8,15 @@ import { buildActiveRunMap, decorateIssue } from './issues.js';
 import { badRequest, parseArgs } from './errors.js';
 import type { HandlerDeps } from './types.js';
 
+const execFileAsync = promisify(execFile);
+
 const REVIEWER_SYSTEM_PROMPT = `You are a code reviewer for a kanbots task.
 
 Your job is to read the diff already in this worktree and produce a focused review.
 
-1. Run \`git diff\` to read the changes.
+1. Run \`git diff main...HEAD\` (or \`git diff master...HEAD\`) to read the changes
+   this branch introduces versus the base. Do not treat an empty working tree as
+   "nothing to review" if that three-dot diff is non-empty.
 2. Read the linked issue body (the user's prompt has it).
 3. Identify: bugs, missed edge cases, places where the change diverges from the
    issue's acceptance criteria, opportunities to simplify.
@@ -290,9 +296,18 @@ export async function reviewer(
       );
     }
   }
+  const repoPath = resolveReviewRepoPath(deps, parsed.repoId);
+  const baseRef =
+    repoPath !== null
+      ? await findImplementBaseRef(deps.store, threadId, repoPath)
+      : null;
   const reviewerPrompt =
     parsed.prompt ??
-    `Review the implementation against the issue:\n\n${issue.title}\n\n${issue.body ?? ''}`;
+    `Review the implementation against the issue:\n\n${issue.title}\n\n${issue.body ?? ''}${
+      baseRef
+        ? `\n\nThis reviewer worktree was branched from \`${baseRef}\` (the last implement run with commits ahead of main). Review that diff — do not conclude "no changes" from an empty working tree alone.`
+        : ''
+    }`;
   return deps.supervisor.start({
     threadId,
     issueNumber: parsed.number,
@@ -300,7 +315,85 @@ export async function reviewer(
     appendSystemPrompt: REVIEWER_SYSTEM_PROMPT,
     ...(parsed.model ? { model: parsed.model } : {}),
     ...(parsed.repoId !== undefined ? { repoId: parsed.repoId } : {}),
+    ...(baseRef !== null ? { baseRef } : {}),
   });
+}
+
+function resolveReviewRepoPath(
+  deps: HandlerDeps,
+  repoId: number | undefined,
+): string | null {
+  if (repoId !== undefined) {
+    const row = deps.store.workspaceRepos.findById(repoId);
+    if (row) return row.repoPath;
+  }
+  return deps.config.repoPath ?? null;
+}
+
+/**
+ * Prefer the newest thread run whose branch still has commits ahead of
+ * main/master. Reviewer used to `git worktree add` from HEAD (main), so
+ * Diff + the reviewer always saw an empty tree after a good implement.
+ */
+export async function findImplementBaseRef(
+  store: Store,
+  threadId: number,
+  repoPath: string,
+): Promise<string | null> {
+  const runs = [...store.agentRuns.listByThread(threadId)].sort(
+    (a, b) => b.id - a.id,
+  );
+  for (const run of runs) {
+    if (!run.branchName) continue;
+    if (
+      run.status === 'starting' ||
+      run.status === 'running' ||
+      run.status === 'awaiting_input'
+    ) {
+      continue;
+    }
+    const count = await countCommitsAheadOfMain(repoPath, run);
+    if (count > 0) return run.branchName;
+  }
+  return null;
+}
+
+async function countCommitsAheadOfMain(
+  repoPath: string,
+  run: AgentRun,
+): Promise<number> {
+  const bases = ['main', 'master', 'origin/main', 'origin/master'] as const;
+  for (const base of bases) {
+    if (run.branchName) {
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-list', '--count', `${base}..${run.branchName}`],
+          { cwd: repoPath },
+        );
+        const n = Number.parseInt(stdout.trim(), 10);
+        if (Number.isFinite(n) && n > 0) return n;
+        if (n === 0) return 0;
+      } catch {
+        // try next base / worktree
+      }
+    }
+    if (run.worktreePath) {
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-list', '--count', `${base}..HEAD`],
+          { cwd: run.worktreePath },
+        );
+        const n = Number.parseInt(stdout.trim(), 10);
+        if (Number.isFinite(n) && n > 0) return n;
+        if (n === 0) return 0;
+      } catch {
+        // try next
+      }
+    }
+  }
+  return 0;
 }
 
 function findThreadForIssue(

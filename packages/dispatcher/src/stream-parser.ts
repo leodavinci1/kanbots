@@ -362,7 +362,8 @@ export function extractDiffHunkEvents(
 
 const DECISION_BLOCK_RE = /```kanbots-decision\s*\n([\s\S]*?)\n```/g;
 
-function extractTextEvents(text: string): StreamEvent[] {
+/** Split assistant text into plain text + parsed `kanbots-decision` events. */
+export function extractTextEvents(text: string): StreamEvent[] {
   if (text.length === 0) return [];
   const out: StreamEvent[] = [];
   let lastIndex = 0;

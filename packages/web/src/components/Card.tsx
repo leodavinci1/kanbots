@@ -94,7 +94,11 @@ function CardBody({
   const branch = strippedBranch(active?.branch);
   const isRunning = issue.agent === 'running';
   const isBlocked = issue.agent === 'blocked';
-  const isReview = issue.agent === 'review';
+  // Ship/Review actions belong on the Review *column* (status:review).
+  // Successful runs set status:review + agent:idle — gating on agent:review
+  // hid Ship forever after a normal complete.
+  const showShipActions =
+    issue.status === 'review' || issue.agent === 'review';
   const tickerName = liveTool?.name ?? active?.currentTool ?? null;
   const tickerArg = liveTool?.arg ?? active?.currentArg ?? null;
   const decision = active?.pendingDecision ?? null;
@@ -153,7 +157,7 @@ function CardBody({
         </>
       ) : null}
 
-      {(isRunning || isReview) && progress !== null ? (
+      {(isRunning || showShipActions) && progress !== null ? (
         <div className="kb-card-progress" aria-label={`Progress ${Math.round(progress * 100)}%`}>
           <div className="kb-bar">
             <i style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%` }} />
@@ -162,7 +166,7 @@ function CardBody({
         </div>
       ) : null}
 
-      {isReview ? (
+      {showShipActions ? (
         <ReviewActions
           issueNumber={issue.number}
           {...(onReviewAction ? { onAction: onReviewAction } : {})}

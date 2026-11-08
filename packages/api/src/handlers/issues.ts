@@ -709,66 +709,31 @@ ${body}
 When the user says "this task", "this issue", "the ticket", "this ticket", or refers to "the task" without naming another, they always mean Task #${issue.number} above. Do not ask the user which task — proceed on Task #${issue.number}.`;
 }
 
-interface DecisionOption {
-  value: string;
-  label: string;
-}
-
 function buildDispatchKickoff(
   issue: { number: number; title: string; body: string },
   fromStatus: StatusKey | null,
   hasPriorRuns: boolean,
 ): string {
+  // Cursor (and other stream-json adapters that don't parse ```kanbots-decision```)
+  // used to dump the fence as plain text, mark the run complete, and leave the
+  // card in Review with no clickable options. Autopilot already ships
+  // proceed-directly; Dispatch matches that so drag/Dispatch actually codes.
   let context: string;
-  let question: string;
-  let options: DecisionOption[];
-
   if (fromStatus === 'review') {
     context =
-      'The user moved this task from Review back to In Progress. The work was at one point ready for review.';
-    question = 'This task came back from Review. What should I focus on?';
-    options = [
-      { value: 'address_review', label: 'Address the latest review feedback' },
-      { value: 'continue', label: 'Continue the previous direction' },
-      { value: 'fresh', label: 'Start with a fresh approach' },
-      { value: 'clarify', label: 'Ask for clarification first' },
-    ];
+      'This task came back from Review. Address review feedback if any; otherwise continue the previous direction and finish the acceptance criteria.';
   } else if (fromStatus === 'done') {
     context =
-      'The user moved this task from Done back to In Progress. It was previously considered finished but the user wants more work on it.';
-    question =
-      'This task was Done and is now In Progress again. What should change?';
-    options = [
-      { value: 'investigate', label: 'Investigate what changed and reopen the work' },
-      { value: 'extend', label: 'Extend the existing implementation' },
-      { value: 'fresh', label: 'Restart with a fresh approach' },
-      { value: 'clarify', label: 'Ask for clarification first' },
-    ];
+      'This task was Done and is In Progress again. Investigate what still needs work, then extend or fix until acceptance is met.';
   } else if (hasPriorRuns) {
     context =
-      'The user moved this task to In Progress. There are prior agent runs on this thread but the task never reached Review. The work may be partial.';
-    question =
-      'This task has prior runs that did not finish. How should I proceed?';
-    options = [
-      { value: 'continue', label: 'Continue from where the prior runs left off' },
-      { value: 'fresh', label: 'Start fresh and ignore prior runs' },
-      { value: 'investigate', label: 'Investigate the prior work first' },
-      { value: 'clarify', label: 'Ask for clarification first' },
-    ];
+      'Prior agent runs on this thread did not finish. Start fresh from the acceptance criteria below — ignore empty or decision-only prior branches.';
   } else {
     context =
-      'The user just moved this task to In Progress. This is the first agent run for it.';
-    question = 'Ready to start. How should I approach this?';
-    options = [
-      { value: 'proceed', label: 'Proceed with the description as written' },
-      { value: 'spec', label: 'Refine the spec / acceptance criteria first' },
-      { value: 'investigate', label: 'Investigate the codebase first to scope the work' },
-      { value: 'clarify', label: 'Ask for clarification first' },
-    ];
+      'First agent run for this task. Proceed from the description and acceptance criteria as written.';
   }
 
   const taskHeader = `Task #${issue.number}: ${issue.title}\n\n${issue.body || '(no description)'}`;
-  const decisionJson = JSON.stringify({ question, options }, null, 2);
 
   return `${taskHeader}
 
@@ -776,13 +741,9 @@ function buildDispatchKickoff(
 
 CONTEXT: ${context}
 
-YOUR FIRST ACTION (do this and only this — do not call tools, do not investigate yet):
+Proceed directly — do not emit a kanbots-decision asking how to approach. Investigate the codebase, make the change, run any checks you have available (prefer ./scripts/verify.sh when present), commit on this branch, and finish when the task is complete. Only emit a kanbots-decision mid-run if a true blocker needs a human choice.
 
-\`\`\`kanbots-decision
-${decisionJson}
-\`\`\`
-
-End your turn after emitting the block. The user's choice will arrive as the next message and you will resume from there.`;
+Do not leave long-running processes (npm run dev, tsx watch, servers, watchers) attached to this turn — they never exit and the run hangs as "running". Stop them before claiming done; use one-shot checks or the app Preview instead.`;
 }
 
 function dispatchSummary(

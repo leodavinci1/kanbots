@@ -62,6 +62,28 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
     });
   }, [debouncedRefetch]);
 
+  // External creates (gh / GitHub web) never hit issues:changed. Poll while
+  // the window is visible, and refetch on focus, so the board catches up
+  // without a manual app restart.
+  useEffect(() => {
+    const POLL_MS = 15_000;
+    function tick(): void {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      debouncedRefetch();
+    }
+    function onFocus(): void {
+      debouncedRefetch();
+    }
+    const id = window.setInterval(tick, POLL_MS);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [debouncedRefetch]);
+
   useEffect(() => {
     return () => {
       if (debounceRef.current !== null) {
