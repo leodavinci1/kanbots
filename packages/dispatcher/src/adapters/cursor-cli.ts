@@ -78,12 +78,21 @@ interface CursorToolCallEvent {
   tool_call?: CursorToolCallPayload;
 }
 
+interface CursorUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+}
+
 interface CursorResultEvent {
   type: 'result';
   subtype?: string;
   is_error?: boolean;
   duration_ms?: number;
   result?: unknown;
+  usage?: CursorUsage;
 }
 
 type CursorEvent =
@@ -112,6 +121,27 @@ const TOOL_CALL_VARIANT_TO_NAME: Record<string, string> = {
 
 function shortNameFor(variant: string): string {
   return TOOL_CALL_VARIANT_TO_NAME[variant] ?? variant;
+}
+
+function tokenUsageFrom(
+  usage: CursorUsage | undefined,
+): { input: number; output: number; cachedInput?: number } | null {
+  if (!usage) return null;
+  if (typeof usage.inputTokens !== 'number' || typeof usage.outputTokens !== 'number') {
+    return null;
+  }
+  const out: { input: number; output: number; cachedInput?: number } = {
+    input: usage.inputTokens,
+    // Reasoning tokens are billed as output on most vendors; fold them in so
+    // Auto estimates aren't silently under-counted.
+    output:
+      usage.outputTokens +
+      (typeof usage.reasoningTokens === 'number' ? usage.reasoningTokens : 0),
+  };
+  if (typeof usage.cacheReadTokens === 'number' && usage.cacheReadTokens > 0) {
+    out.cachedInput = usage.cacheReadTokens;
+  }
+  return out;
 }
 
 export const cursorCliAdapter: AgentCliAdapter = {
@@ -215,10 +245,9 @@ function mapEvent(ev: CursorEvent): StreamEvent[] {
               ? r.result
               : JSON.stringify(r.result)
             : '',
-        // cursor stream-json doesn't carry an explicit usage block in
-        // the published shape; cost falls out to the worker's pricing
-        // table when a model id is known.
-        tokenUsage: null,
+        // cursor-agent stream-json includes usage{inputTokens,outputTokens,…}.
+        // Worker fills totalCostUsd from the pricing table (Auto → estimate).
+        tokenUsage: tokenUsageFrom(r.usage),
         durationMs: typeof r.duration_ms === 'number' ? r.duration_ms : null,
         totalCostUsd: null,
       });

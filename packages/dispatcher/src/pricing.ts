@@ -61,6 +61,24 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = Object.free
     asOf: '2026-05-05',
     source: 'https://platform.openai.com/docs/pricing',
   },
+  // Cursor Agent CLI (`--model auto` / stream model "Auto"). Cursor Pro
+  // burns an included pool, not API invoices — these Sonnet-class rates are
+  // an API-equivalent estimate so KanBots meters aren't stuck at $0.00.
+  // Prefer Hub Cursor % for true plan burn.
+  auto: {
+    inputUsdPerMtok: 3,
+    outputUsdPerMtok: 15,
+    cachedInputUsdPerMtok: 0.3,
+    asOf: '2026-11-08',
+    source: 'estimate: Claude Sonnet-class proxy for Cursor Auto included pool',
+  },
+  Auto: {
+    inputUsdPerMtok: 3,
+    outputUsdPerMtok: 15,
+    cachedInputUsdPerMtok: 0.3,
+    asOf: '2026-11-08',
+    source: 'estimate: Claude Sonnet-class proxy for Cursor Auto included pool',
+  },
 });
 
 let overrideCache: Record<string, ModelPricing> | null = null;
@@ -103,7 +121,11 @@ function loadOverrides(): Record<string, ModelPricing> {
 
 export function getModelPricing(modelId: string): ModelPricing | null {
   const overrides = loadOverrides();
-  return overrides[modelId] ?? MODEL_PRICING[modelId] ?? null;
+  if (overrides[modelId]) return overrides[modelId]!;
+  if (MODEL_PRICING[modelId]) return MODEL_PRICING[modelId]!;
+  // Cursor reports "Auto"; CLI flag is often "auto".
+  const lower = modelId.toLowerCase();
+  return overrides[lower] ?? MODEL_PRICING[lower] ?? null;
 }
 
 export interface TokenUsage {
